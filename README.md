@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src/assets/logo.png" alt="lodestone" width="64" height="64" />
+</p>
+
 # lodestone — Headless Minecraft AFK Manager
 
 Eine schlanke Desktop-App, um mehrere Minecraft-Accounts **headless** (ohne
