@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>lodestone</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="logo">⛏</span>
+          <div>
+            <h1>lodestone</h1>
+            <p class="subtitle">Headless Minecraft AFK Manager</p>
+          </div>
+        </div>
+        <span class="version-badge" id="version-badge">1.21.11</span>
+      </header>
+
+      <section class="panel server-panel">
+        <label class="panel-label" for="server-input">Server</label>
+        <div class="server-row">
+          <input
+            id="server-input"
+            type="text"
+            placeholder="z. B. mc.example.net  oder  192.168.0.10:25565"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <span class="save-hint" id="server-save-hint"></span>
+        </div>
+      </section>
+
+      <section class="stats-bar">
+        <div class="stat">
+          <span class="stat-label">CPU gesamt</span>
+          <span class="stat-value" id="overall-cpu">0&nbsp;%</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat">
+          <span class="stat-label">RAM gesamt</span>
+          <span class="stat-value" id="overall-mem">0&nbsp;MB</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat">
+          <span class="stat-label">Aktive Bots</span>
+          <span class="stat-value" id="overall-bots">0</span>
+        </div>
+      </section>
+
+      <section class="panel accounts-panel">
+        <div class="accounts-header">
+          <div class="accounts-title">
+            <label class="panel-label">Accounts</label>
+            <span class="count-pill" id="account-count">0</span>
+          </div>
+          <button class="btn btn-ghost" id="add-account-btn">
+            <span class="btn-icon">＋</span> Account hinzufügen
+          </button>
+        </div>
+
+        <div class="accounts-list" id="accounts-list">
+          <!-- rows injected here -->
+        </div>
+
+        <div class="empty-state" id="empty-state">
+          <p>Noch keine Accounts.</p>
+          <p class="muted">Füge einen Microsoft-Account hinzu, um zu starten.</p>
+        </div>
+      </section>
+
+      <footer class="actionbar">
+        <label class="select-all">
+          <input type="checkbox" id="select-all" />
+          <span>Alle</span>
+        </label>
+        <div class="spacer"></div>
+        <button class="btn btn-danger-ghost" id="stop-all-btn">Alle trennen</button>
+        <button class="btn btn-primary" id="start-selected-btn">
+          <span class="btn-icon">▶</span> Ausgewählte starten
+        </button>
+      </footer>
+    </div>
+
+    <!-- Account-row template -->
+    <template id="account-row-template">
+      <div class="account-row" data-id="">
+        <input type="checkbox" class="account-select" />
+        <div class="account-avatar"><span class="avatar-letter"></span></div>
+        <div class="account-info">
+          <div class="account-name"></div>
+          <div class="account-sub muted"></div>
+        </div>
+        <div class="account-status">
+          <span class="status-dot"></span>
+          <span class="status-text">Getrennt</span>
+          <span class="uptime"></span>
+        </div>
+        <div class="account-actions">
+          <button class="btn btn-small btn-connect">Verbinden</button>
+          <button class="btn btn-small btn-icon-only btn-remove" title="Account entfernen">🗑</button>
+        </div>
+      </div>
+    </template>
+
+    <!-- Device-code login modal -->
+    <div class="modal-backdrop" id="auth-modal" hidden>
+      <div class="modal">
+        <h2>Mit Microsoft anmelden</h2>
+        <p class="modal-desc">
+          Öffne die Anmeldeseite und gib den Code ein. Das Fenster schließt sich
+          automatisch, sobald die Anmeldung abgeschlossen ist.
+        </p>
+        <div class="code-box">
+          <span class="code-label">Code</span>
+          <div class="code-value" id="auth-code">––––––––</div>
+          <button class="btn btn-small" id="copy-code-btn">Kopieren</button>
+        </div>
+        <a class="auth-link" id="auth-link" href="#">Anmeldeseite öffnen ↗</a>
+        <div class="modal-status" id="auth-status">
+          <span class="spinner"></span> Warte auf Anmeldung …
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="auth-cancel-btn">Schließen</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
