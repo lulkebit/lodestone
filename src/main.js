@@ -87,14 +87,12 @@ function buildRow(acc) {
   select.checked = acc.selected;
   select.addEventListener("change", () => toggleSelected(acc.id, select.checked));
 
-  node.querySelector(".avatar-letter").textContent = (acc.username || "?")
-    .charAt(0)
-    .toUpperCase();
   node.querySelector(".account-name").textContent = acc.username || acc.label;
   node.querySelector(".account-sub").textContent = subText(acc);
 
-  node.querySelector(".status-dot").className = "status-dot " + status.cls;
-  node.querySelector(".status-text").textContent =
+  const statusText = node.querySelector(".status-text");
+  statusText.className = "status-text " + status.cls;
+  statusText.textContent =
     acc.status === "connecting" && acc.attempt
       ? `Reconnect #${acc.attempt}`
       : status.text;
@@ -168,7 +166,7 @@ serverInput.addEventListener("input", () => {
   serverSaveTimer = setTimeout(async () => {
     serverAddress = serverInput.value.trim();
     await invoke("set_server", { address: serverAddress });
-    serverHint.textContent = "✓ gespeichert";
+    serverHint.textContent = "Gespeichert";
     serverHint.classList.add("show");
     setTimeout(() => serverHint.classList.remove("show"), 1400);
   }, 400);
@@ -251,7 +249,7 @@ $("#add-account-btn").addEventListener("click", async () => {
 
 function openAuthModal() {
   authCode.textContent = "––––––––";
-  authLink.textContent = "Anmeldeseite öffnen ↗";
+  authLink.textContent = "Anmeldeseite öffnen";
   authLink.dataset.url = "";
   setAuthStatus("waiting", "Code wird angefordert …");
   authModal.hidden = false;
@@ -309,7 +307,7 @@ listen("auth:code", (e) => {
   const { user_code, verification_uri } = e.payload;
   authCode.textContent = user_code;
   authLink.dataset.url = verification_uri;
-  authLink.textContent = `${verification_uri} ↗`;
+  authLink.textContent = verification_uri;
   setAuthStatus("waiting", "Warte auf Anmeldung …");
   // auto-open the verification page
   invoke("open_url", { url: verification_uri }).catch(() => {});
@@ -331,13 +329,13 @@ listen("auth:success", (e) => {
       selected: true,
     });
   }
-  setAuthStatus("success", `✓ ${acc.username} angemeldet`);
+  setAuthStatus("success", `${acc.username} angemeldet`);
   render();
   setTimeout(() => (authModal.hidden = true), 1200);
 });
 
 listen("auth:error", (e) => {
-  setAuthStatus("error", "✗ " + e.payload);
+  setAuthStatus("error", e.payload);
 });
 
 listen("bot:status", (e) => {
