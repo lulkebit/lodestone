@@ -57,9 +57,10 @@ body {
   gap: 12px;
 }
 .logo {
-  font-size: 26px;
-  line-height: 1;
-  filter: saturate(0.9);
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 .brand h1 {
   margin: 0;
