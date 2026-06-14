@@ -1,156 +1,105 @@
+<h1 align="center">lodestone</h1>
+
 <p align="center">
-  <img src="src/assets/logo.png" alt="lodestone" width="64" height="64" />
+  Keep multiple Minecraft accounts online and AFK on a server. Headless,
+  lightweight, and without a single game window.
 </p>
 
-# lodestone — Headless Minecraft AFK Manager
+<p align="center">
+  <img src="src/assets/logo.png" alt="lodestone" width="96" height="96" />
+</p>
 
-Eine schlanke Desktop-App, um mehrere Minecraft-Accounts **headless** (ohne
-Spielfenster, minimal CPU/RAM) gleichzeitig auf einen Server zu bringen und
-dort eingeloggt zu halten — inkl. Microsoft-Login, Live-Status und Disconnect.
+<!-- The version below is read by the app and the release tooling. -->
 
-Ziel-Minecraftversion: **1.21.11** (Protokoll 774).
+_Supported Minecraft version: `1.21.11`._
+
+> [!NOTE]
+> lodestone runs your accounts in the background, so they stay connected with
+> minimal CPU and memory. No game client, no extra windows. You sign in once
+> with Microsoft and lodestone handles the rest.
 
 ## Features
 
-- **Microsoft-Login pro Account** über den Device-Code-Flow. Tokens werden
-  lokal gecacht → einmal anmelden, danach kein erneuter Login nötig.
-- **Checkbox-Auswahl**, welche Accounts gestartet werden.
-- **Eine Server-Adresse** für alle Accounts (`host` oder `host:port`,
-  SRV-Records werden aufgelöst).
-- **Headless** — die Bots haben kein Render-Fenster, nur die Netzwerk-/
-  Protokoll-Schicht läuft.
-- **Live-Status** je Account: Getrennt / Verbinde / Verbunden + **Uptime**,
-  sowie **Verbinden/Trennen** einzeln oder für alle.
-- **Ressourcen-Monitor**: echte **CPU/RAM pro Account** (jeder Bot läuft in
-  einem eigenen Prozess) plus **Gesamt**-Summe (CPU, RAM, aktive Bots).
-- Leichtes **Anti-AFK** (gelegentliches Umschauen/Armschwingen), damit Server
-  einen nicht wegen Inaktivität kicken.
-- **Auto-Reconnect** mit exponentiellem Backoff (5→60 s) bei unerwartetem
-  Disconnect; gibt nur auf, wenn die Erstverbindung 8× in Folge scheitert
-  (z. B. Ban/Whitelist). Der Status zeigt „Reconnect #N".
+- **Multiple accounts**: add as many Microsoft accounts as you like and keep
+  them all connected at once.
+- **One-time sign-in**: log in through Microsoft once per account. lodestone
+  remembers it, so you never have to re-enter a password.
+- **One server, one click**: set a server address and connect your selected
+  accounts together, or one at a time.
+- **Truly headless**: no game window, no rendering, just a quiet background
+  connection per account.
+- **Live overview**: see each account's status and uptime, plus real CPU and
+  memory usage per account and in total.
+- **Stays online**: automatic reconnect after a drop, and light anti-AFK
+  movement so servers don't kick you for being idle.
+- **Automatic updates**: lodestone updates itself and shows you what changed.
 
-## Architektur
+## Getting started
 
-```
-┌─────────────────────────────┐
-│ Tauri-Fenster (WKWebView)    │  Frontend: src/ (Vanilla HTML/CSS/JS)
-│  └ invoke() / event listen   │
-├─────────────────────────────┤
-│ Rust-Backend (src-tauri/)    │  Config-Persistenz + Prozess-Management
-│  • store.rs   Accounts/Server│
-│  • engine.rs  spawnt Prozesse│  ←── stdout JSON je Prozess ──┐
-│  • lib.rs     Tauri-Commands │                               │
-└─────────────────────────────┘                               │
-                                                               ▼
-   Ein Prozess pro Bot (echte CPU/RAM)      kurzlebig je Login
-   ┌──────────────────────────────────┐    ┌────────────────────────┐
-   │ sidecar/bot-worker.mjs  (× N)     │    │ sidecar/login.mjs       │
-   │  • mineflayer  → MC-Bot, headless │    │  • prismarine-auth      │
-   │  • self-reported cpu/rss alle 2 s │    │    → MS-Device-Code      │
-   └──────────────────────────────────┘    └────────────────────────┘
-        (gemeinsame Helfer: sidecar/shared.mjs)
-```
+### Download
 
-Warum ein Node-Sidecar? Die reine Rust-Bibliothek (azalea) unterstützt 1.21.11
-nur in einer Version, die in Pre-Release-Dependency-Konflikten feststeckt.
-**Mineflayer** ist der zuverlässige Industriestandard für headless MC-Bots mit
-garantiertem 1.21.11-Support. Die Tauri-Shell bleibt leichtgewichtig (nativer
-WebView statt Chromium), Node läuft als schlanker Hintergrundprozess.
+Grab the latest version for your operating system from the
+[**Releases page**](https://github.com/lulkebit/lodestone/releases), then install
+and open it.
 
-## Voraussetzungen
+> [!IMPORTANT]
+> lodestone needs **[Node.js](https://nodejs.org)** installed on your computer.
+> It powers the connection engine behind the scenes, so install it once and
+> you're set.
 
-- **Node.js** (getestet mit v22) — wird zur Laufzeit für den Sidecar gebraucht.
-- **Rust** (stable) + Tauri-Systemvoraussetzungen.
+### Use it
 
-## Starten (Entwicklung)
+1. **Add an account.** Click *+ Hinzufügen*. A code and a link appear: open the
+   link, enter the code, and sign in with Microsoft. The window closes itself
+   once you're signed in.
+2. **Enter a server**, for example `mc.example.net` or `192.168.0.10:25565`.
+3. **Pick the accounts** you want with the checkboxes.
+4. **Start them** with *Ausgewählte starten*, or connect each one individually.
+   Status and uptime update live, and *Alle trennen* disconnects everyone.
 
-```bash
-npm install            # Frontend-/Sidecar-Abhängigkeiten (mineflayer, prismarine-auth, Tauri-CLI)
-npm run tauri dev      # baut das Rust-Backend und öffnet das Fenster
-```
+## Automatic updates
 
-## Bedienung
+lodestone checks for new versions on launch. When one is available, a banner
+appears: click **Aktualisieren** and it downloads, installs, and restarts into
+the new version. After updating, a **"What's new"** screen shows you what
+changed. You can reopen it any time by clicking the version number in the top
+right. The full history lives in the [changelog](CHANGELOG.md).
 
-1. **Account hinzufügen** → ein Code + Link erscheinen. Seite öffnen, Code
-   eingeben, mit Microsoft anmelden. Das Fenster schließt sich automatisch.
-2. **Server** eintragen (z. B. `mc.example.net` oder `192.168.0.10:25565`).
-3. Accounts per **Checkbox** auswählen.
-4. **Ausgewählte starten** — oder einzeln „Verbinden". Status & Uptime laufen
-   live mit; „Trennen" / „Alle trennen" beendet die Verbindungen.
+## Your accounts & privacy
 
-## Daten & Speicherorte
+- **No passwords are ever stored.** Only the renewable tokens Microsoft issues.
+- Everything stays on your machine:
+  - Settings (accounts, selection, server): `com.lodestone.app/config.json`
+  - Sign-in token cache: `com.lodestone.app/auth-cache/`
 
-- Config (Accounts, Auswahl, Server-Adresse):
-  `~/Library/Application Support/com.lodestone.app/config.json`
-- Auth-Token-Cache (prismarine-auth):
-  `~/Library/Application Support/com.lodestone.app/auth-cache/`
+  (under `~/Library/Application Support/` on macOS, `%AppData%` on Windows, and
+  `~/.config/` on Linux).
 
-Es werden **keine Passwörter** gespeichert — nur die von Microsoft
-ausgestellten, erneuerbaren Tokens.
+## Building from source
 
-## Bekannte Einschränkungen
-
-- **Produktions-Bundle** (`npm run tauri build`): Der Node-Sidecar und seine
-  `node_modules` werden aktuell **nicht** mitgebündelt, und `node` muss im PATH
-  liegen. Für `tauri dev` funktioniert alles. Zum Verteilen müsste man den
-  Sidecar als Resource bündeln (oder zu einer Single-Binary packen, z. B. via
-  `node --experimental-sea-config` / `pkg`) und ggf. den Node-Pfad über die
-  Umgebungsvariable `LODESTONE_NODE` setzen.
-
-## Versionierung, Updates & Releases
-
-lodestone hat einen eingebauten **Auto-Updater** (Tauri-Updater-Plugin) und einen
-automatischen **GitHub-Release-Build**.
-
-### In der App
-
-- Beim Start prüft die App still im Hintergrund auf neue Versionen. Gibt es eine,
-  erscheint oben ein Banner mit **„Aktualisieren"** (lädt signiert herunter,
-  zeigt den Fortschritt, installiert und startet neu).
-- Nach einem Update wird automatisch **„Was ist neu"** mit dem Changelog der
-  neuen Version angezeigt. Erneut aufrufbar per Klick auf die Versionsnummer
-  oben rechts.
-- Der Changelog wird zur Build-Zeit aus [`CHANGELOG.md`](CHANGELOG.md) in die
-  Binary kompiliert (funktioniert offline, passt immer zum laufenden Build).
-
-### Eine neue Version veröffentlichen
+Want to run the latest code or contribute?
 
 ```bash
-npm run release -- patch     # oder: minor | major | 1.4.2
-# → bumpt package.json, tauri.conf.json, Cargo.toml und legt eine
-#   Changelog-Sektion an. CHANGELOG.md ausformulieren, dann:
-git add -A && git commit -m "Release vX.Y.Z"
-git tag vX.Y.Z && git push origin HEAD --tags
+npm install        # install dependencies
+npm run tauri dev  # build and launch the app
 ```
 
-Der Tag-Push startet [`.github/workflows/release.yml`](.github/workflows/release.yml):
-Builds für **macOS (arm + intel), Windows und Linux** werden gebaut, die
-Updater-Artefakte signiert, `latest.json` erzeugt und ein **GitHub-Release** mit
-dem Changelog als Beschreibung angelegt. Installierte Apps finden das Update über
-`releases/latest/download/latest.json`.
+You'll need [Node.js](https://nodejs.org) and [Rust](https://rustup.rs) along
+with the usual [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
-### Einmalige Einrichtung (Signing-Secrets)
+Cutting a release (maintainers): bump the version with `npm run release -- patch`
+(or `minor` / `major`), fill in the [changelog](CHANGELOG.md), then commit and
+push a `vX.Y.Z` tag. The GitHub Actions workflow builds and publishes the signed
+release for every platform.
 
-Updates müssen signiert sein. Das Schlüsselpaar liegt bereits unter
-`~/.tauri/lodestone-updater.key` (privat) bzw. `…key.pub` (public, schon in
-`tauri.conf.json` hinterlegt). Der private Schlüssel muss als GitHub-Secret in
-**Settings → Secrets and variables → Actions** hinterlegt werden:
+## How it works
 
-```bash
-pbcopy < ~/.tauri/lodestone-updater.key   # privaten Schlüssel kopieren
-```
+lodestone is a small [Tauri](https://v2.tauri.app) desktop app. The interface
+and account management are native and lightweight. The actual Minecraft
+connections run as background processes powered by
+[mineflayer](https://github.com/PrismarineJS/mineflayer), which gives each bot
+its own isolated process and therefore accurate per-account resource numbers.
 
-- `TAURI_SIGNING_PRIVATE_KEY` — Inhalt der Datei oben (**erforderlich**).
-- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — leer (der Schlüssel hat kein Passwort);
-  das Secret kann weggelassen oder leer gesetzt werden.
+## License
 
-> ⚠️ Den privaten Schlüssel **niemals** committen und nicht verlieren — ohne ihn
-> lassen sich keine kompatiblen Updates mehr signieren.
-
-Lokale `tauri build`-Tests brauchen denselben Schlüssel in der Umgebung
-(`TAURI_SIGNING_PRIVATE_KEY=$(cat ~/.tauri/lodestone-updater.key) npm run tauri build`).
-`npm run tauri dev` ist davon nicht betroffen.
-
-## Konfiguration
-
-- `LODESTONE_NODE` — absoluter Pfad zur `node`-Binary, falls sie nicht im PATH ist.
+Released under the [MIT License](LICENSE).

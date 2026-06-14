@@ -10,30 +10,28 @@ automatisch in der App unter „Was ist neu" angezeigt.
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-06-14
+## [0.1.0] - 2026-06-14
 
-### Hinzugefügt
+Erste Veröffentlichung. 🎉
 
-- …
+### Accounts & Verbindung
 
-## [0.2.0] - 2026-06-14
+- Mehrere Microsoft-Accounts per Geräte-Code-Anmeldung hinzufügen. Einmal
+  anmelden, danach übernimmt lodestone das Token-Handling.
+- Eine Server-Adresse für alle Accounts (`host` oder `host:port`, SRV wird aufgelöst).
+- Accounts per Checkbox auswählen und einzeln oder gesammelt verbinden/trennen.
+- Headless: Die Bots laufen ohne Spielfenster mit minimalem Ressourcenverbrauch.
+- Automatischer Reconnect bei unerwartetem Disconnect und leichtes Anti-AFK
+  gegen Inaktivitäts-Kicks.
 
-### Hinzugefügt
+### Überblick
 
-- **Automatisches Update-System**: lodestone prüft beim Start und auf Knopfdruck
-  auf neue Versionen, lädt sie signiert herunter und installiert sie mit einem Klick.
-- **„Was ist neu"-Ansicht**: Nach jedem Update werden die Änderungen der neuen
-  Version direkt in der App angezeigt. Jederzeit erneut aufrufbar über das Symbol
-  neben der Versionsnummer.
-- **Versionsanzeige** in der Kopfzeile zeigt jetzt die echte App-Version.
-- **Signierte GitHub-Releases**: Builds für macOS, Windows und Linux werden bei
-  jedem Versions-Tag automatisch gebaut, signiert und veröffentlicht.
+- Live-Status je Account (Getrennt / Verbinde / Verbunden) inkl. Verbindungsdauer.
+- Ressourcen-Monitor: echte CPU- und RAM-Auslastung pro Account sowie als Gesamtsumme.
 
-## [0.1.0] - 2026-06-13
+### Updates
 
-### Hinzugefügt
-
-- Erste Version: Headless Minecraft AFK-Manager.
-- Verwaltung mehrerer Microsoft-Accounts per Geräte-Code-Anmeldung.
-- Pro-Account-Bots mit Live-Anzeige von Status, Verbindungsdauer, CPU und RAM.
-- Automatischer Reconnect und gesammelte Start-/Stopp-Steuerung.
+- Eingebautes Auto-Update: lodestone prüft auf neue Versionen, lädt sie signiert
+  herunter und installiert sie mit einem Klick.
+- „Was ist neu" zeigt nach jedem Update die Änderungen der neuen Version direkt
+  in der App.

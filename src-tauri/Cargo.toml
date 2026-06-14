@@ -1,9 +1,10 @@
 [package]
 name = "lodestone"
-version = "0.3.0"
+version = "0.1.0"
 description = "Headless Minecraft AFK Manager"
 authors = ["you"]
 edition = "2021"
+license = "MIT"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
