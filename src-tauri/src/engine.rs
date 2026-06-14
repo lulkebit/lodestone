@@ -31,6 +31,67 @@ pub struct Engine {
     cache_dir: PathBuf,
 }
 
+/// Locate a usable `node` binary.
+///
+/// A bundled GUI app does not inherit the user's shell `PATH` (on macOS launchd
+/// hands it only `/usr/bin:/bin:/usr/sbin:/sbin`), so a Homebrew/nvm install is
+/// invisible and a bare `node` spawn fails with ENOENT. We therefore probe the
+/// usual locations and, as a last resort, ask the user's login shell.
+fn resolve_node() -> String {
+    // 1. Explicit override always wins.
+    if let Ok(p) = std::env::var("LODESTONE_NODE") {
+        let p = p.trim().to_string();
+        if !p.is_empty() {
+            return p;
+        }
+    }
+
+    // On Windows the system PATH is inherited by GUI apps, so a plain lookup works.
+    #[cfg(not(windows))]
+    {
+        // 2. Common absolute install locations.
+        for c in [
+            "/opt/homebrew/bin/node", // Apple Silicon Homebrew
+            "/usr/local/bin/node",    // Intel Homebrew / nodejs.org pkg
+            "/usr/bin/node",          // Linux distro packages
+        ] {
+            if std::path::Path::new(c).exists() {
+                return c.to_string();
+            }
+        }
+        // 3. Ask the user's login shell (covers nvm / fnm / volta / asdf).
+        if let Some(p) = node_from_login_shell() {
+            return p;
+        }
+    }
+
+    // 4. Fall back to a PATH lookup.
+    "node".to_string()
+}
+
+/// Resolve `node` through the user's interactive login shell so version managers
+/// that only configure `PATH` in shell rc files (nvm, fnm, …) are picked up.
+#[cfg(not(windows))]
+fn node_from_login_shell() -> Option<String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+    let out = std::process::Command::new(shell)
+        .args(["-lic", "command -v node"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let path = stdout
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .last()?
+        .to_string();
+    if std::path::Path::new(&path).exists() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
 impl Engine {
     pub fn new(
         app: AppHandle,
@@ -40,7 +101,7 @@ impl Engine {
         worker_script: PathBuf,
         cache_dir: PathBuf,
     ) -> Arc<Engine> {
-        let node = std::env::var("LODESTONE_NODE").unwrap_or_else(|_| "node".to_string());
+        let node = resolve_node();
         Arc::new(Engine {
             app,
             store,

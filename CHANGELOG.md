@@ -10,6 +10,15 @@ automatisch in der App unter „Was ist neu" angezeigt.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-14
+
+### Behoben
+
+- Fertige Builds bringen den Bot-Motor jetzt selbst mit (das Sidecar samt
+  `node_modules` wird mitgeliefert) und finden Node.js auch bei einer
+  Installation über nvm oder Homebrew. Vorher schlug der Start als gebündelte
+  App mit „Sidecar-Start fehlgeschlagen" fehl.
+
 ## [0.2.0] - 2026-06-14
 
 ### Hinzugefügt

@@ -45,7 +45,9 @@ and open it.
 > [!IMPORTANT]
 > lodestone needs **[Node.js](https://nodejs.org)** installed on your computer.
 > It powers the connection engine behind the scenes, so install it once and
-> you're set.
+> you're set. lodestone looks for Node in the usual places (including Homebrew
+> and nvm). If it still cannot find it, set the `LODESTONE_NODE` environment
+> variable to the full path of your `node` binary.
 
 ### Use it
 
