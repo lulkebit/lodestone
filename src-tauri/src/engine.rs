@@ -148,7 +148,8 @@ impl Engine {
         let mut child = match self.spawn_node(&self.login_script, &[&id, &cache]) {
             Ok(c) => c,
             Err(e) => {
-                let _ = self.app.emit("auth:error", format!("Sidecar-Start fehlgeschlagen: {e}"));
+                eprintln!("[login] spawn failed: {e}");
+                let _ = self.app.emit("auth:error", "bot.error.sidecarStart");
                 return;
             }
         };
@@ -185,11 +186,13 @@ impl Engine {
         let mut child = match self.spawn_node(&self.worker_script, &[&id, &cache, &address]) {
             Ok(c) => c,
             Err(e) => {
+                eprintln!("[worker] spawn failed: {e}");
                 self.set_status(&id, "error", None);
                 let _ = self.app.emit(
                     "bot:status",
-                    json!({ "id": id, "status": "error", "error": format!("Sidecar-Start fehlgeschlagen: {e}") }),
+                    json!({ "id": id, "status": "error", "error_key": "bot.error.sidecarStart" }),
                 );
+                crate::update_tray(&self.app);
                 return;
             }
         };
@@ -222,6 +225,7 @@ impl Engine {
             "bot:status",
             json!({ "id": id, "status": "disconnected", "connected_at": null, "error": "" }),
         );
+        crate::update_tray(&self.app);
     }
 
     pub fn stop_all(&self) {
@@ -236,6 +240,7 @@ impl Engine {
                 json!({ "id": id, "status": "disconnected", "connected_at": null, "error": "" }),
             );
         }
+        crate::update_tray(&self.app);
     }
 
     fn set_status(&self, id: &str, status: &str, connected_at: Option<i64>) {
@@ -264,9 +269,14 @@ fn forward_event(
 
     match v.get("event").and_then(|e| e.as_str()) {
         Some("auth_code") => {
+            // A code carrying an account id is a running bot re-authenticating; the
+            // login sidecar sends none. Surface the window so the dialog is seen.
+            if !s("id").is_empty() {
+                crate::show_main(app);
+            }
             let _ = app.emit(
                 "auth:code",
-                json!({ "user_code": s("user_code"), "verification_uri": s("verification_uri") }),
+                json!({ "id": s("id"), "user_code": s("user_code"), "verification_uri": s("verification_uri") }),
             );
         }
         Some("auth_success") => {
@@ -308,8 +318,9 @@ fn forward_event(
             );
             let _ = app.emit(
                 "bot:status",
-                json!({ "id": id, "status": status, "connected_at": connected_at, "error": s("error"), "attempt": attempt }),
+                json!({ "id": id, "status": status, "connected_at": connected_at, "error": s("error"), "error_key": s("error_key"), "attempt": attempt }),
             );
+            crate::update_tray(app);
         }
         Some("metrics") => {
             let _ = app.emit(

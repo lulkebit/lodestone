@@ -7,6 +7,7 @@ const t = i18n.t;
 // ---------- State ----------
 let accounts = []; // {id,label,username,uuid,selected,status,connectedAt,error}
 let serverAddress = "";
+let reauthId = null; // account id currently re-authenticating (expired session)
 
 // ---------- DOM ----------
 const $ = (sel) => document.querySelector(sel);
@@ -26,6 +27,8 @@ const authModal = $("#auth-modal");
 const authCode = $("#auth-code");
 const authLink = $("#auth-link");
 const authStatus = $("#auth-status");
+const authTitle = authModal.querySelector("h2");
+const authDesc = authModal.querySelector(".modal-desc");
 
 // CSS class per status; the label text comes from the active language.
 const STATUS_CLS = {
@@ -58,7 +61,10 @@ function subText(acc) {
       ? t("account.metrics", { cpu: acc.cpu, mem: acc.mem })
       : t("account.running");
   }
-  if (acc.status === "error" && acc.error) return acc.error;
+  if (acc.status === "error") {
+    if (acc.errorKey) return t(acc.errorKey);
+    if (acc.error) return acc.error;
+  }
   return acc.uuid || "";
 }
 
@@ -91,6 +97,18 @@ function buildRow(acc) {
   const select = node.querySelector(".account-select");
   select.checked = acc.selected;
   select.addEventListener("change", () => toggleSelected(acc.id, select.checked));
+
+  // Minecraft head avatar by UUID; falls back to a neutral block when offline.
+  const avatar = node.querySelector(".account-avatar");
+  if (acc.uuid) {
+    avatar.src = `https://mc-heads.net/avatar/${encodeURIComponent(acc.uuid)}/64`;
+    avatar.onerror = () => {
+      avatar.removeAttribute("src");
+      avatar.classList.add("is-fallback");
+    };
+  } else {
+    avatar.classList.add("is-fallback");
+  }
 
   node.querySelector(".account-name").textContent = acc.username || acc.label;
   node.querySelector(".account-sub").textContent = subText(acc);
@@ -160,6 +178,7 @@ async function loadState(state) {
     cpu: null,
     mem: null,
     error: "",
+    errorKey: null,
   }));
   serverAddress = state.server_address || "";
   serverInput.value = serverAddress;
@@ -215,6 +234,14 @@ async function stopAccount(id) {
 }
 
 async function removeAccount(id) {
+  const acc = accounts.find((a) => a.id === id);
+  const name = acc ? acc.username || acc.label || "" : "";
+  const ok = await confirmDialog({
+    title: t("account.remove.confirm.title"),
+    body: t("account.remove.confirm.body", { name }),
+    confirmLabel: t("account.remove"),
+  });
+  if (!ok) return;
   await invoke("stop_account", { id }).catch(() => {});
   await invoke("remove_account", { id });
   accounts = accounts.filter((a) => a.id !== id);
@@ -249,15 +276,31 @@ $("#add-account-btn").addEventListener("click", async () => {
   try {
     await invoke("add_account");
   } catch (e) {
-    setAuthStatus("error", String(e));
+    setAuthStatus("error", tErr(String(e)));
   }
 });
 
 function openAuthModal() {
+  reauthId = null;
+  authTitle.textContent = t("auth.title");
+  authDesc.textContent = t("auth.desc");
   authCode.textContent = "––––––––";
   authLink.textContent = t("auth.openPage");
   authLink.dataset.url = "";
   setAuthStatus("waiting", t("auth.requestingCode"));
+  authModal.hidden = false;
+}
+
+// Reused for an expired session: same modal, account-specific wording.
+function openReauthModal(acc) {
+  authTitle.textContent = t("auth.reauth.title");
+  authDesc.textContent = t("auth.reauth.desc", {
+    username: acc.username || acc.label || "",
+  });
+  authCode.textContent = "––––––––";
+  authLink.textContent = t("auth.openPage");
+  authLink.dataset.url = "";
+  setAuthStatus("waiting", t("auth.waiting"));
   authModal.hidden = false;
 }
 
@@ -269,7 +312,14 @@ function setAuthStatus(kind, msg) {
 
 $("#auth-cancel-btn").addEventListener("click", () => {
   authModal.hidden = true;
-  invoke("cancel_add_account").catch(() => {});
+  if (reauthId) {
+    // Can't reconnect without a valid session — stop the account.
+    const id = reauthId;
+    reauthId = null;
+    stopAccount(id);
+  } else {
+    invoke("cancel_add_account").catch(() => {});
+  }
 });
 
 $("#copy-code-btn").addEventListener("click", () => {
@@ -289,6 +339,7 @@ function updateStatus(id, status, extra = {}) {
   acc.status = status;
   if ("connectedAt" in extra) acc.connectedAt = extra.connectedAt;
   if ("error" in extra) acc.error = extra.error;
+  if ("errorKey" in extra) acc.errorKey = extra.errorKey;
   if ("attempt" in extra) acc.attempt = extra.attempt;
   if (status !== "connected") {
     acc.connectedAt = null;
@@ -299,18 +350,65 @@ function updateStatus(id, status, extra = {}) {
   render();
 }
 
+// Translate a backend error if it is a known i18n key (e.g. "error.noServer",
+// "bot.error.kicked"); otherwise pass the text through unchanged.
+function tErr(msg) {
+  const s = String(msg);
+  if (/^(error|bot\.error|auth\.error)\./.test(s)) return t(s);
+  return s;
+}
+
+// ---------- Confirm dialog ----------
+const confirmModal = $("#confirm-modal");
+const confirmTitle = $("#confirm-title");
+const confirmBody = $("#confirm-body");
+const confirmOkBtn = $("#confirm-ok-btn");
+const confirmCancelBtn = $("#confirm-cancel-btn");
+let confirmResolver = null;
+
+// Promise-based confirm so callers can `await` the user's choice.
+function confirmDialog({ title, body, confirmLabel, cancelLabel }) {
+  confirmTitle.textContent = title;
+  confirmBody.textContent = body;
+  confirmOkBtn.textContent = confirmLabel;
+  confirmCancelBtn.textContent = cancelLabel || t("common.cancel");
+  confirmModal.hidden = false;
+  return new Promise((resolve) => (confirmResolver = resolve));
+}
+
+function closeConfirm(result) {
+  confirmModal.hidden = true;
+  if (confirmResolver) {
+    confirmResolver(result);
+    confirmResolver = null;
+  }
+}
+
+confirmOkBtn.addEventListener("click", () => closeConfirm(true));
+confirmCancelBtn.addEventListener("click", () => closeConfirm(false));
+confirmModal.addEventListener("click", (e) => {
+  if (e.target === confirmModal) closeConfirm(false);
+});
+
 // ---------- Toasts ----------
 function toast(msg, isError = false) {
   const el = document.createElement("div");
   el.className = "toast" + (isError ? " error" : "");
-  el.textContent = msg;
+  el.textContent = tErr(msg);
   $("#toast-container").appendChild(el);
   setTimeout(() => el.remove(), 4200);
 }
 
 // ---------- Event wiring ----------
 listen("auth:code", (e) => {
-  const { user_code, verification_uri } = e.payload;
+  const { id, user_code, verification_uri } = e.payload;
+  // A code carrying a known account id comes from a running bot whose session
+  // expired: reopen the dialog for that account instead of failing silently.
+  const acc = id ? accounts.find((a) => a.id === id) : null;
+  if (acc) {
+    reauthId = id;
+    openReauthModal(acc);
+  }
   authCode.textContent = user_code;
   authLink.dataset.url = verification_uri;
   authLink.textContent = verification_uri;
@@ -341,16 +439,23 @@ listen("auth:success", (e) => {
 });
 
 listen("auth:error", (e) => {
-  setAuthStatus("error", e.payload);
+  setAuthStatus("error", tErr(e.payload));
 });
 
 listen("bot:status", (e) => {
-  const { id, status, connected_at, error, attempt } = e.payload;
+  const { id, status, connected_at, error, error_key, attempt } = e.payload;
   updateStatus(id, status, {
     connectedAt: connected_at ? connected_at * 1000 : null,
     error: error || "",
+    errorKey: error_key || null,
     attempt: attempt || null,
   });
+  // A pending re-auth resolved once the bot reconnects.
+  if (reauthId === id && status === "connected") {
+    reauthId = null;
+    setAuthStatus("success", t("auth.reauth.done"));
+    setTimeout(() => (authModal.hidden = true), 1200);
+  }
 });
 
 listen("bot:metrics", (e) => {

@@ -37,6 +37,21 @@
   "auth.requestingCode": "Requesting code …",
   "auth.waiting": "Waiting for sign-in …",
   "auth.signedIn": "{username} signed in",
+  "auth.error.noProfile": "Sign-in failed (no profile / Minecraft not owned?).",
+  "auth.reauth.title": "Session expired",
+  "auth.reauth.desc": "{username}'s sign-in expired. Open the page and enter the code to reconnect.",
+  "auth.reauth.done": "Signed in again",
+
+  "account.remove.confirm.title": "Remove account?",
+  "account.remove.confirm.body": "{name} will be removed from lodestone. Its Microsoft sign-in is forgotten and any active connection stops.",
+
+  "bot.error.connectFailed": "Connection failed after several attempts.",
+  "bot.error.kicked": "Kicked by the server.",
+  "bot.error.sidecarStart": "Could not start the bot engine.",
+
+  "error.accountNotFound": "Account not found.",
+  "error.noServer": "No server address set.",
+  "error.noUpdate": "No update available.",
 
   "whatsnew.title": "What's new",
   "whatsnew.version": "Version {version}",
@@ -64,5 +79,6 @@
   "toast.noneSelected": "No accounts selected.",
 
   "common.saved": "Saved",
-  "common.close": "Close"
+  "common.close": "Close",
+  "common.cancel": "Cancel"
 }

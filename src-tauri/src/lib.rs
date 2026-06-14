@@ -9,7 +9,9 @@ use std::sync::{Arc, Mutex};
 use engine::{Engine, StatusInfo};
 use serde::Serialize;
 use store::Store;
-use tauri::{AppHandle, Manager, State};
+use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, State, WindowEvent, Wry};
 use tauri_plugin_opener::OpenerExt;
 use uuid::Uuid;
 
@@ -17,6 +19,39 @@ pub struct AppState {
     store: Arc<Store>,
     engine: Arc<Engine>,
     statuses: Arc<Mutex<HashMap<String, StatusInfo>>>,
+}
+
+/// Holds the tray's status menu item so we can update its text as bots connect.
+pub struct TrayState {
+    status_item: Mutex<Option<MenuItem<Wry>>>,
+}
+
+/// Bring the main window back to the foreground (from the tray).
+pub fn show_main(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+/// Refresh the tray tooltip and status line with the live online-bot count.
+pub fn update_tray(app: &AppHandle) {
+    let online = {
+        let st = app.state::<AppState>();
+        let statuses = st.statuses.lock().unwrap();
+        statuses.values().filter(|s| s.status == "connected").count()
+    };
+    let label = format!("{online} online");
+    if let Some(item) = app
+        .try_state::<TrayState>()
+        .and_then(|ts| ts.status_item.lock().unwrap().clone())
+    {
+        let _ = item.set_text(&label);
+    }
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(format!("lodestone: {label}")));
+    }
 }
 
 #[derive(Serialize)]
@@ -130,12 +165,12 @@ async fn start_account(state: State<'_, AppState>, id: String) -> Result<(), Str
     let address = {
         let cfg = state.store.config.lock().unwrap();
         if !cfg.accounts.iter().any(|a| a.id == id) {
-            return Err("Account nicht gefunden".into());
+            return Err("error.accountNotFound".into());
         }
         cfg.server_address.clone()
     };
     if address.trim().is_empty() {
-        return Err("Keine Server-Adresse gesetzt".into());
+        return Err("error.noServer".into());
     }
     state.engine.start_bot(id, address).await;
     Ok(())
@@ -147,8 +182,10 @@ async fn stop_account(state: State<'_, AppState>, id: String) -> Result<(), Stri
     Ok(())
 }
 
-#[tauri::command]
-async fn start_selected(state: State<'_, AppState>) -> Result<(), String> {
+/// Start every selected account. Shared by the command and the tray menu, so it
+/// takes an `AppHandle` rather than a `State` extractor.
+async fn start_selected_internal(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
     let (address, ids) = {
         let cfg = state.store.config.lock().unwrap();
         let ids: Vec<String> = cfg
@@ -160,12 +197,17 @@ async fn start_selected(state: State<'_, AppState>) -> Result<(), String> {
         (cfg.server_address.clone(), ids)
     };
     if address.trim().is_empty() {
-        return Err("Keine Server-Adresse gesetzt".into());
+        return Err("error.noServer".into());
     }
     for id in ids {
         state.engine.start_bot(id, address.clone()).await;
     }
     Ok(())
+}
+
+#[tauri::command]
+async fn start_selected(app: AppHandle) -> Result<(), String> {
+    start_selected_internal(&app).await
 }
 
 #[tauri::command]
@@ -227,6 +269,75 @@ pub fn run() {
                 engine,
                 statuses,
             });
+
+            // --- System tray: keep bots reachable while the window is hidden ---
+            let status_item = MenuItemBuilder::with_id("status", "0 online")
+                .enabled(false)
+                .build(app)?;
+            let show_item = MenuItemBuilder::with_id("show", "Show lodestone").build(app)?;
+            let start_item =
+                MenuItemBuilder::with_id("start_selected", "Start selected").build(app)?;
+            let stop_item =
+                MenuItemBuilder::with_id("stop_all", "Disconnect all").build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "Quit lodestone").build(app)?;
+            let tray_menu = MenuBuilder::new(app)
+                .item(&status_item)
+                .separator()
+                .item(&show_item)
+                .item(&start_item)
+                .item(&stop_item)
+                .separator()
+                .item(&quit_item)
+                .build()?;
+
+            TrayIconBuilder::with_id("main")
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("lodestone")
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => show_main(app),
+                    "start_selected" => {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = start_selected_internal(&app).await;
+                        });
+                    }
+                    "stop_all" => app.state::<AppState>().engine.stop_all(),
+                    "quit" => {
+                        app.state::<AppState>().engine.stop_all();
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main(tray.app_handle());
+                    }
+                })
+                .build(app)?;
+
+            app.manage(TrayState {
+                status_item: Mutex::new(Some(status_item)),
+            });
+
+            // Closing the window hides it to the tray instead of quitting, so the
+            // bots keep running. Use the tray's "Quit" entry to exit fully.
+            if let Some(win) = app.get_webview_window("main") {
+                let win_for_event = win.clone();
+                win.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win_for_event.hide();
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -249,6 +360,12 @@ pub fn run() {
             updater::get_whats_new,
             updater::get_changelog
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            // macOS: clicking the dock icon should restore the hidden window.
+            if let tauri::RunEvent::Reopen { .. } = event {
+                show_main(app);
+            }
+        });
 }

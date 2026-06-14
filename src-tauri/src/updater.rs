@@ -107,7 +107,7 @@ pub async fn install_update(app: AppHandle) -> Result<(), String> {
     let updater = app.updater().map_err(|e| e.to_string())?;
     let update = match updater.check().await.map_err(|e| e.to_string())? {
         Some(u) => u,
-        None => return Err("Kein Update verfügbar.".into()),
+        None => return Err("error.noUpdate".into()),
     };
 
     let downloaded = Arc::new(AtomicU64::new(0));

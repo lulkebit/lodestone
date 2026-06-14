@@ -37,6 +37,21 @@
   "auth.requestingCode": "Code wird angefordert …",
   "auth.waiting": "Warte auf Anmeldung …",
   "auth.signedIn": "{username} angemeldet",
+  "auth.error.noProfile": "Anmeldung fehlgeschlagen (kein Profil / kein MC-Besitz?).",
+  "auth.reauth.title": "Sitzung abgelaufen",
+  "auth.reauth.desc": "Die Anmeldung von {username} ist abgelaufen. Öffne die Seite und gib den Code ein, um wieder zu verbinden.",
+  "auth.reauth.done": "Erneut angemeldet",
+
+  "account.remove.confirm.title": "Account entfernen?",
+  "account.remove.confirm.body": "{name} wird aus lodestone entfernt. Die Microsoft-Anmeldung wird vergessen und eine bestehende Verbindung getrennt.",
+
+  "bot.error.connectFailed": "Verbindung nach mehreren Versuchen fehlgeschlagen.",
+  "bot.error.kicked": "Vom Server gekickt.",
+  "bot.error.sidecarStart": "Bot-Motor konnte nicht gestartet werden.",
+
+  "error.accountNotFound": "Account nicht gefunden.",
+  "error.noServer": "Keine Server-Adresse gesetzt.",
+  "error.noUpdate": "Kein Update verfügbar.",
 
   "whatsnew.title": "Was ist neu",
   "whatsnew.version": "Version {version}",
@@ -64,5 +79,6 @@
   "toast.noneSelected": "Keine Accounts ausgewählt.",
 
   "common.saved": "Gespeichert",
-  "common.close": "Schließen"
+  "common.close": "Schließen",
+  "common.cancel": "Abbrechen"
 }

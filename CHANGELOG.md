@@ -10,6 +10,34 @@ automatisch in der App unter „Was ist neu" angezeigt.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-14
+
+### Added
+
+- **System tray.** lodestone now lives in the menu bar / tray. The tray menu
+  shows how many bots are online and lets you reopen the window, start the
+  selected accounts, disconnect everyone, or quit, without touching the main
+  window. The tooltip reflects the live online count.
+- **Account avatars.** Every account now shows its Minecraft head, so the list
+  is much easier to scan at a glance.
+- **Re-sign-in prompt.** If a running account's Microsoft session expires,
+  lodestone reopens the device-code dialog for exactly that account instead of
+  silently failing to reconnect. Cancelling stops the account.
+- **Confirmation before removing an account**, so a stray click can no longer
+  delete a sign-in by accident.
+
+### Changed
+
+- **Closing the window keeps lodestone running in the tray** instead of quitting,
+  so your accounts stay connected in the background. Use the tray's *Quit* entry
+  to exit completely.
+
+### Fixed
+
+- Bot status messages (kick reasons, connection failures, engine-start errors)
+  now follow the selected interface language instead of always showing in
+  German.
+
 ## [0.2.1] - 2026-06-14
 
 ### Behoben

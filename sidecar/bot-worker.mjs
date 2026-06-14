@@ -27,7 +27,8 @@ const MAX_INITIAL_ATTEMPTS = 8;
 
 let currentBot = null;
 let connectedAt = null;
-let lastError = null;
+let lastError = null; // raw text (server kick reason / exception message)
+let lastErrorKey = null; // i18n key for our own generic messages
 let afk = null;
 let attempts = 0;
 let everConnected = false;
@@ -73,9 +74,14 @@ function scheduleReconnect() {
   if (stopping) return;
   attempts++;
   if (!everConnected && attempts > MAX_INITIAL_ATTEMPTS) {
-    status("error", {
-      error: lastError || "Verbindung nach mehreren Versuchen fehlgeschlagen",
-    });
+    // Prefer a concrete server/exception message; otherwise fall back to a key
+    // the frontend translates into the active language.
+    status(
+      "error",
+      lastError
+        ? { error: lastError }
+        : { error_key: lastErrorKey || "bot.error.connectFailed" }
+    );
     stopping = true;
     setTimeout(() => process.exit(1), 200);
     return;
@@ -101,6 +107,7 @@ function connect() {
       onMsaCode: (r) =>
         send({
           event: "auth_code",
+          id, // a running bot needs to re-auth → frontend reopens the dialog
           user_code: r.user_code,
           verification_uri: r.verification_uri,
         }),
@@ -108,6 +115,7 @@ function connect() {
     });
   } catch (e) {
     lastError = e?.message || String(e);
+    lastErrorKey = null;
     return scheduleReconnect();
   }
   currentBot = bot;
@@ -117,6 +125,7 @@ function connect() {
     attempts = 0;
     connectedAt = Math.floor(Date.now() / 1000);
     lastError = null;
+    lastErrorKey = null;
     status("connected", { connected_at: connectedAt });
     stopAfk();
     // Gentle anti-AFK so idle-kick timers keep resetting.
@@ -130,17 +139,25 @@ function connect() {
   });
 
   bot.on("kicked", (reason) => {
-    lastError = reasonText(reason) || "Vom Server gekickt";
+    const r = reasonText(reason);
+    if (r) {
+      lastError = r;
+      lastErrorKey = null;
+    } else {
+      lastError = null;
+      lastErrorKey = "bot.error.kicked";
+    }
   });
   bot.on("error", (err) => {
     lastError = err?.message || String(err);
+    lastErrorKey = null;
   });
 
   bot.on("end", (reason) => {
     stopAfk();
     currentBot = null;
     if (stopping) return; // killed by parent → no reconnect
-    if (!lastError) lastError = reasonText(reason);
+    if (!lastError && !lastErrorKey) lastError = reasonText(reason);
     scheduleReconnect();
   });
 }

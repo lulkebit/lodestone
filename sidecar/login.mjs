@@ -23,7 +23,8 @@ flow
   .getMinecraftJavaToken({ fetchProfile: true })
   .then((res) => {
     if (!res || !res.profile || !res.profile.name) {
-      throw new Error("Anmeldung fehlgeschlagen (kein Profil / kein MC-Besitz?)");
+      // i18n key — the frontend translates known error keys.
+      throw new Error("auth.error.noProfile");
     }
     send({
       event: "auth_success",

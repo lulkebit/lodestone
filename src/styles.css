@@ -312,6 +312,21 @@ body {
   border-bottom: none;
 }
 
+.account-avatar {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  background: var(--line);
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+/* Neutral placeholder block when the head can't be fetched (offline). */
+.account-avatar.is-fallback {
+  background: var(--line);
+}
+
 .account-row.is-connected .account-name {
   font-weight: 600;
 }
@@ -601,6 +616,10 @@ input[type="checkbox"]:checked::after {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+.confirm-actions {
+  gap: 16px;
 }
 
 .modal-wide {
