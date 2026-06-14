@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="src/assets/logo.png" alt="lodestone" width="96" height="96" />
+  <img src="src/assets/logo.png" alt="lodestone" width="200" height="200" />
 </p>
 
 <!-- The version below is read by the app and the release tooling. -->
