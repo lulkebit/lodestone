@@ -16,8 +16,24 @@
             <p class="subtitle">Headless Minecraft AFK Manager</p>
           </div>
         </div>
-        <span class="version" id="version-badge">1.21.11</span>
+        <button class="version" id="version-badge" type="button" title="Was ist neu">
+          <span id="version-text">v0.2.0</span>
+          <span class="update-dot" id="update-dot" hidden></span>
+        </button>
       </header>
+
+      <div class="update-banner" id="update-banner" hidden>
+        <div class="update-banner-main">
+          <span class="update-banner-text" id="update-banner-text">Neue Version verfügbar</span>
+          <div class="update-progress" id="update-progress" hidden>
+            <div class="update-progress-bar" id="update-progress-bar"></div>
+          </div>
+        </div>
+        <div class="update-banner-actions">
+          <button class="btn" id="update-dismiss-btn">Später</button>
+          <button class="btn btn-strong" id="update-install-btn">Aktualisieren</button>
+        </div>
+      </div>
 
       <section class="section server-section">
         <label class="label" for="server-input">Server</label>
@@ -111,6 +127,17 @@
         </div>
         <div class="modal-actions">
           <button class="btn" id="auth-cancel-btn">Schließen</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="whatsnew-modal" hidden>
+      <div class="modal modal-wide">
+        <h2>Was ist neu</h2>
+        <p class="modal-desc" id="whatsnew-version">Version 0.2.0</p>
+        <div class="changelog" id="whatsnew-body"></div>
+        <div class="modal-actions">
+          <button class="btn btn-strong" id="whatsnew-close-btn">Schließen</button>
         </div>
       </div>
     </div>

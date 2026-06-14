@@ -73,9 +73,83 @@ body {
 }
 
 .version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
+  font-family: inherit;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  transition: color 0.13s;
+}
+
+.version:hover {
+  color: var(--text);
+}
+
+.update-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text);
+  flex-shrink: 0;
+}
+
+.update-dot[hidden] {
+  display: none;
+}
+
+/* ---------- Update banner ---------- */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.update-banner[hidden] {
+  display: none;
+}
+
+.update-banner-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.update-banner-text {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.update-progress {
+  margin-top: 8px;
+  height: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.update-progress[hidden] {
+  display: none;
+}
+
+.update-progress-bar {
+  height: 100%;
+  width: 0;
+  background: var(--text);
+  transition: width 0.2s ease;
+}
+
+.update-banner-actions {
+  display: flex;
+  gap: 14px;
+  flex-shrink: 0;
 }
 
 /* ---------- Sections ---------- */
@@ -499,6 +573,71 @@ input[type="checkbox"]:checked::after {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+.modal-wide {
+  width: 460px;
+}
+
+/* ---------- Changelog / What's new ---------- */
+.changelog {
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  user-select: text;
+}
+
+.changelog h3 {
+  margin: 18px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.changelog h3:first-child {
+  margin-top: 0;
+}
+
+.changelog ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.changelog li {
+  margin: 4px 0;
+}
+
+.changelog li::marker {
+  color: var(--text-faint);
+}
+
+.changelog strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.changelog code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.changelog p {
+  margin: 6px 0;
+}
+
+.changelog::-webkit-scrollbar {
+  width: 4px;
+}
+
+.changelog::-webkit-scrollbar-thumb {
+  background: var(--line);
 }
 
 .spinner {

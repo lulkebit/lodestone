@@ -97,6 +97,60 @@ ausgestellten, erneuerbaren Tokens.
   `node --experimental-sea-config` / `pkg`) und ggf. den Node-Pfad über die
   Umgebungsvariable `LODESTONE_NODE` setzen.
 
+## Versionierung, Updates & Releases
+
+lodestone hat einen eingebauten **Auto-Updater** (Tauri-Updater-Plugin) und einen
+automatischen **GitHub-Release-Build**.
+
+### In der App
+
+- Beim Start prüft die App still im Hintergrund auf neue Versionen. Gibt es eine,
+  erscheint oben ein Banner mit **„Aktualisieren"** (lädt signiert herunter,
+  zeigt den Fortschritt, installiert und startet neu).
+- Nach einem Update wird automatisch **„Was ist neu"** mit dem Changelog der
+  neuen Version angezeigt. Erneut aufrufbar per Klick auf die Versionsnummer
+  oben rechts.
+- Der Changelog wird zur Build-Zeit aus [`CHANGELOG.md`](CHANGELOG.md) in die
+  Binary kompiliert (funktioniert offline, passt immer zum laufenden Build).
+
+### Eine neue Version veröffentlichen
+
+```bash
+npm run release -- patch     # oder: minor | major | 1.4.2
+# → bumpt package.json, tauri.conf.json, Cargo.toml und legt eine
+#   Changelog-Sektion an. CHANGELOG.md ausformulieren, dann:
+git add -A && git commit -m "Release vX.Y.Z"
+git tag vX.Y.Z && git push origin HEAD --tags
+```
+
+Der Tag-Push startet [`.github/workflows/release.yml`](.github/workflows/release.yml):
+Builds für **macOS (arm + intel), Windows und Linux** werden gebaut, die
+Updater-Artefakte signiert, `latest.json` erzeugt und ein **GitHub-Release** mit
+dem Changelog als Beschreibung angelegt. Installierte Apps finden das Update über
+`releases/latest/download/latest.json`.
+
+### Einmalige Einrichtung (Signing-Secrets)
+
+Updates müssen signiert sein. Das Schlüsselpaar liegt bereits unter
+`~/.tauri/lodestone-updater.key` (privat) bzw. `…key.pub` (public, schon in
+`tauri.conf.json` hinterlegt). Der private Schlüssel muss als GitHub-Secret in
+**Settings → Secrets and variables → Actions** hinterlegt werden:
+
+```bash
+pbcopy < ~/.tauri/lodestone-updater.key   # privaten Schlüssel kopieren
+```
+
+- `TAURI_SIGNING_PRIVATE_KEY` — Inhalt der Datei oben (**erforderlich**).
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — leer (der Schlüssel hat kein Passwort);
+  das Secret kann weggelassen oder leer gesetzt werden.
+
+> ⚠️ Den privaten Schlüssel **niemals** committen und nicht verlieren — ohne ihn
+> lassen sich keine kompatiblen Updates mehr signieren.
+
+Lokale `tauri build`-Tests brauchen denselben Schlüssel in der Umgebung
+(`TAURI_SIGNING_PRIVATE_KEY=$(cat ~/.tauri/lodestone-updater.key) npm run tauri build`).
+`npm run tauri dev` ist davon nicht betroffen.
+
 ## Konfiguration
 
 - `LODESTONE_NODE` — absoluter Pfad zur `node`-Binary, falls sie nicht im PATH ist.

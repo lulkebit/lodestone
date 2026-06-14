@@ -1,5 +1,6 @@
 mod engine;
 mod store;
+mod updater;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -190,6 +191,7 @@ fn resolve_sidecar_dir(app: &AppHandle) -> PathBuf {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             let dir = handle
@@ -231,7 +233,12 @@ pub fn run() {
             stop_account,
             start_selected,
             stop_all,
-            open_url
+            open_url,
+            updater::get_app_version,
+            updater::check_for_update,
+            updater::install_update,
+            updater::get_whats_new,
+            updater::get_changelog
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

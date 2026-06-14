@@ -19,6 +19,11 @@ pub struct Config {
     pub server_address: String,
     #[serde(default)]
     pub accounts: Vec<Account>,
+    /// The app version the user last saw the changelog for. Used to decide
+    /// whether to surface the "What's new" screen after an update. `None` on a
+    /// fresh install (no changelog is shown for a first run).
+    #[serde(default)]
+    pub last_seen_version: Option<String>,
 }
 
 /// Persists the account list + server address as JSON in the app config dir.

@@ -360,5 +360,170 @@ listen("bot:metrics", (e) => {
   updateOverall();
 });
 
+// ---------- Version, updates & changelog ----------
+const versionBadge = $("#version-badge");
+const versionText = $("#version-text");
+const updateDot = $("#update-dot");
+const updateBanner = $("#update-banner");
+const updateBannerText = $("#update-banner-text");
+const updateInstallBtn = $("#update-install-btn");
+const updateDismissBtn = $("#update-dismiss-btn");
+const updateProgress = $("#update-progress");
+const updateProgressBar = $("#update-progress-bar");
+
+const whatsnewModal = $("#whatsnew-modal");
+const whatsnewVersion = $("#whatsnew-version");
+const whatsnewBody = $("#whatsnew-body");
+
+let availableVersion = null;
+let installing = false;
+
+// Minimal Markdown → HTML for changelog bodies (headings, lists, bold, code).
+function renderMarkdown(md) {
+  const esc = (s) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (s) =>
+    esc(s)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`(.+?)`/g, "<code>$1</code>");
+
+  let html = "";
+  let inList = false;
+  let li = null;
+  const flushLi = () => {
+    if (li != null) {
+      html += `<li>${inline(li.trim())}</li>`;
+      li = null;
+    }
+  };
+  const closeList = () => {
+    flushLi();
+    if (inList) {
+      html += "</ul>";
+      inList = false;
+    }
+  };
+
+  for (const raw of md.split("\n")) {
+    const line = raw.replace(/\s+$/, "");
+    if (/^#{1,6}\s+/.test(line)) {
+      closeList();
+      html += `<h3>${inline(line.replace(/^#{1,6}\s+/, ""))}</h3>`;
+    } else if (/^\s*-\s+/.test(line)) {
+      flushLi();
+      if (!inList) {
+        html += "<ul>";
+        inList = true;
+      }
+      li = line.replace(/^\s*-\s+/, "");
+    } else if (line.trim() === "") {
+      flushLi();
+    } else if (li != null) {
+      li += " " + line.trim(); // continuation of a wrapped list item
+    } else {
+      closeList();
+      html += `<p>${inline(line.trim())}</p>`;
+    }
+  }
+  closeList();
+  return html;
+}
+
+function openWhatsNew(wn) {
+  whatsnewVersion.textContent = "Version " + wn.version;
+  whatsnewBody.innerHTML = renderMarkdown(wn.notes);
+  whatsnewModal.hidden = false;
+}
+
+async function initVersion() {
+  try {
+    const v = await invoke("get_app_version");
+    versionText.textContent = "v" + v;
+  } catch {}
+}
+
+// After an update the running version differs from the last one the user saw;
+// the backend then returns that version's changelog so we can surface it.
+async function showWhatsNewIfUpdated() {
+  try {
+    const wn = await invoke("get_whats_new");
+    if (wn) openWhatsNew(wn);
+  } catch {}
+}
+
+// Silent background check on launch. Stays quiet when offline or in dev.
+async function checkForUpdate() {
+  try {
+    const meta = await invoke("check_for_update");
+    if (meta && meta.available) {
+      availableVersion = meta.version;
+      updateDot.hidden = false;
+      updateBannerText.textContent = `Version ${meta.version} verfügbar`;
+      updateBanner.hidden = false;
+    }
+  } catch {
+    // No reachable updater endpoint — nothing to show.
+  }
+}
+
+versionBadge.addEventListener("click", async () => {
+  try {
+    const wn = await invoke("get_changelog", { version: null });
+    if (wn) openWhatsNew(wn);
+    else toast("Kein Changelog für diese Version gefunden.");
+  } catch {}
+});
+
+$("#whatsnew-close-btn").addEventListener("click", () => {
+  whatsnewModal.hidden = true;
+});
+whatsnewModal.addEventListener("click", (e) => {
+  if (e.target === whatsnewModal) whatsnewModal.hidden = true;
+});
+
+updateDismissBtn.addEventListener("click", () => {
+  updateBanner.hidden = true;
+});
+
+updateInstallBtn.addEventListener("click", async () => {
+  if (installing) return;
+  installing = true;
+  updateInstallBtn.disabled = true;
+  updateDismissBtn.disabled = true;
+  updateProgress.hidden = false;
+  updateBannerText.textContent = `Lade Version ${availableVersion} …`;
+  try {
+    await invoke("install_update");
+    // On success the app relaunches into the new version — usually unreachable.
+  } catch (e) {
+    installing = false;
+    updateInstallBtn.disabled = false;
+    updateDismissBtn.disabled = false;
+    updateProgress.hidden = true;
+    updateProgressBar.style.width = "0";
+    updateBannerText.textContent = "Update fehlgeschlagen";
+    toast(String(e), true);
+  }
+});
+
+listen("update:progress", (e) => {
+  const { downloaded, total } = e.payload;
+  if (total) {
+    const pct = Math.min(100, Math.round((downloaded / total) * 100));
+    updateProgressBar.style.width = pct + "%";
+    updateBannerText.textContent = `Lade Version ${availableVersion} … ${pct}%`;
+  }
+});
+
+listen("update:downloaded", () => {
+  updateProgressBar.style.width = "100%";
+  updateBannerText.textContent = "Installiere … App startet neu";
+});
+
 // ---------- Boot ----------
-window.addEventListener("DOMContentLoaded", loadState);
+window.addEventListener("DOMContentLoaded", () => {
+  loadState();
+  initVersion();
+  showWhatsNewIfUpdated();
+  checkForUpdate();
+});

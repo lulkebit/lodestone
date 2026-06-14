@@ -1,11 +1,12 @@
 {
   "name": "lodestone",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "tauri": "tauri",
-    "icon:generate": "tauri icon src/assets/logo.png"
+    "icon:generate": "tauri icon src/assets/logo.png",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
