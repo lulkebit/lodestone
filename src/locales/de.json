@@ -1,0 +1,68 @@
+{
+  "app.subtitle": "Headless Minecraft AFK Manager",
+
+  "server.label": "Server",
+  "server.placeholder": "mc.example.net oder 192.168.0.10:25565",
+
+  "stats.cpu": "CPU",
+  "stats.ram": "RAM",
+  "stats.bots": "Bots",
+
+  "accounts.title": "Accounts",
+  "accounts.add": "+ Hinzufügen",
+  "accounts.empty.title": "Noch keine Accounts.",
+  "accounts.empty.sub": "Microsoft-Account hinzufügen, um zu starten.",
+
+  "actions.all": "Alle",
+  "actions.stopAll": "Alle trennen",
+  "actions.startSelected": "Ausgewählte starten",
+
+  "account.connect": "Verbinden",
+  "account.disconnect": "Trennen",
+  "account.remove": "Entfernen",
+  "account.remove.title": "Account entfernen",
+  "account.running": "läuft …",
+  "account.metrics": "CPU {cpu} % · RAM {mem} MB",
+
+  "status.disconnected": "Getrennt",
+  "status.connecting": "Verbinde …",
+  "status.connected": "Verbunden",
+  "status.error": "Fehler",
+  "status.reconnect": "Reconnect #{n}",
+
+  "auth.title": "Microsoft-Anmeldung",
+  "auth.desc": "Öffne die Anmeldeseite und gib den Code ein. Das Fenster schließt sich automatisch nach erfolgreicher Anmeldung.",
+  "auth.copy": "Kopieren",
+  "auth.openPage": "Anmeldeseite öffnen",
+  "auth.requestingCode": "Code wird angefordert …",
+  "auth.waiting": "Warte auf Anmeldung …",
+  "auth.signedIn": "{username} angemeldet",
+
+  "whatsnew.title": "Was ist neu",
+  "whatsnew.version": "Version {version}",
+  "whatsnew.none": "Kein Changelog für diese Version gefunden.",
+
+  "update.available": "Version {version} verfügbar",
+  "update.later": "Später",
+  "update.install": "Aktualisieren",
+  "update.downloading": "Lade Version {version} …",
+  "update.downloadingPct": "Lade Version {version} … {pct}%",
+  "update.installing": "Installiere … App startet neu",
+  "update.failed": "Update fehlgeschlagen",
+
+  "settings.title": "Einstellungen",
+  "settings.open": "Einstellungen",
+  "settings.language": "Sprache",
+  "settings.language.sub": "Sprache der Oberfläche",
+  "settings.updates": "Updates",
+  "settings.checkUpdates": "Nach Updates suchen",
+  "settings.checking": "Suche …",
+  "settings.upToDate": "Du bist auf dem neuesten Stand.",
+  "settings.checkFailed": "Suche fehlgeschlagen.",
+
+  "toast.noServer": "Bitte zuerst eine Server-Adresse eintragen.",
+  "toast.noneSelected": "Keine Accounts ausgewählt.",
+
+  "common.saved": "Gespeichert",
+  "common.close": "Schließen"
+}

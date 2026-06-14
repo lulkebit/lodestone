@@ -33,6 +33,7 @@ struct AccountView {
 struct StateView {
     server_address: String,
     accounts: Vec<AccountView>,
+    language: Option<String>,
 }
 
 #[tauri::command]
@@ -59,7 +60,14 @@ fn get_state(state: State<AppState>) -> StateView {
     StateView {
         server_address: cfg.server_address.clone(),
         accounts,
+        language: cfg.language.clone(),
     }
+}
+
+#[tauri::command]
+fn set_language(state: State<AppState>, language: String) {
+    state.store.config.lock().unwrap().language = Some(language);
+    state.store.save();
 }
 
 #[tauri::command]
@@ -224,6 +232,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_state,
             set_server,
+            set_language,
             set_selected,
             set_all_selected,
             add_account,

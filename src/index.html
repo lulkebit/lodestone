@@ -13,13 +13,21 @@
           <img src="assets/logo.png" alt="" class="logo" width="28" height="28" />
           <div>
             <h1>lodestone</h1>
-            <p class="subtitle">Headless Minecraft AFK Manager</p>
+            <p class="subtitle" data-i18n="app.subtitle">Headless Minecraft AFK Manager</p>
           </div>
         </div>
-        <button class="version" id="version-badge" type="button" title="Was ist neu">
-          <span id="version-text">v0.1.0</span>
-          <span class="update-dot" id="update-dot" hidden></span>
-        </button>
+        <div class="topbar-actions">
+          <button class="version" id="version-badge" type="button" data-i18n-title="whatsnew.title" title="Was ist neu">
+            <span id="version-text">v0.2.0</span>
+            <span class="update-dot" id="update-dot" hidden></span>
+          </button>
+          <button class="icon-btn" id="settings-btn" type="button" data-i18n-title="settings.open" title="Einstellungen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+        </div>
       </header>
 
       <div class="update-banner" id="update-banner" hidden>
@@ -30,36 +38,37 @@
           </div>
         </div>
         <div class="update-banner-actions">
-          <button class="btn" id="update-dismiss-btn">Später</button>
-          <button class="btn btn-strong" id="update-install-btn">Aktualisieren</button>
+          <button class="btn" id="update-dismiss-btn" data-i18n="update.later">Später</button>
+          <button class="btn btn-strong" id="update-install-btn" data-i18n="update.install">Aktualisieren</button>
         </div>
       </div>
 
       <section class="section server-section">
-        <label class="label" for="server-input">Server</label>
+        <label class="label" for="server-input" data-i18n="server.label">Server</label>
         <div class="server-row">
           <input
             id="server-input"
             type="text"
+            data-i18n-placeholder="server.placeholder"
             placeholder="mc.example.net oder 192.168.0.10:25565"
             autocomplete="off"
             spellcheck="false"
           />
-          <span class="save-hint" id="server-save-hint">Gespeichert</span>
+          <span class="save-hint" id="server-save-hint" data-i18n="common.saved">Gespeichert</span>
         </div>
       </section>
 
       <section class="section stats-section">
         <div class="stat">
-          <span class="stat-label">CPU</span>
+          <span class="stat-label" data-i18n="stats.cpu">CPU</span>
           <span class="stat-value" id="overall-cpu">0&nbsp;%</span>
         </div>
         <div class="stat">
-          <span class="stat-label">RAM</span>
+          <span class="stat-label" data-i18n="stats.ram">RAM</span>
           <span class="stat-value" id="overall-mem">0&nbsp;MB</span>
         </div>
         <div class="stat">
-          <span class="stat-label">Bots</span>
+          <span class="stat-label" data-i18n="stats.bots">Bots</span>
           <span class="stat-value" id="overall-bots">0</span>
         </div>
       </section>
@@ -67,28 +76,28 @@
       <section class="section accounts-section">
         <div class="accounts-header">
           <div class="accounts-title">
-            <span class="label">Accounts</span>
+            <span class="label" data-i18n="accounts.title">Accounts</span>
             <span class="count" id="account-count">0</span>
           </div>
-          <button class="btn" id="add-account-btn">+ Hinzufügen</button>
+          <button class="btn" id="add-account-btn" data-i18n="accounts.add">+ Hinzufügen</button>
         </div>
 
         <div class="accounts-list" id="accounts-list"></div>
 
         <div class="empty-state" id="empty-state">
-          <p>Noch keine Accounts.</p>
-          <p class="muted">Microsoft-Account hinzufügen, um zu starten.</p>
+          <p data-i18n="accounts.empty.title">Noch keine Accounts.</p>
+          <p class="muted" data-i18n="accounts.empty.sub">Microsoft-Account hinzufügen, um zu starten.</p>
         </div>
       </section>
 
       <footer class="actionbar">
         <label class="select-all">
           <input type="checkbox" id="select-all" />
-          <span>Alle</span>
+          <span data-i18n="actions.all">Alle</span>
         </label>
         <div class="spacer"></div>
-        <button class="btn" id="stop-all-btn">Alle trennen</button>
-        <button class="btn btn-strong" id="start-selected-btn">Ausgewählte starten</button>
+        <button class="btn" id="stop-all-btn" data-i18n="actions.stopAll">Alle trennen</button>
+        <button class="btn btn-strong" id="start-selected-btn" data-i18n="actions.startSelected">Ausgewählte starten</button>
       </footer>
     </div>
 
@@ -112,32 +121,59 @@
 
     <div class="modal-backdrop" id="auth-modal" hidden>
       <div class="modal">
-        <h2>Microsoft-Anmeldung</h2>
-        <p class="modal-desc">
+        <h2 data-i18n="auth.title">Microsoft-Anmeldung</h2>
+        <p class="modal-desc" data-i18n="auth.desc">
           Öffne die Anmeldeseite und gib den Code ein. Das Fenster schließt sich
           automatisch nach erfolgreicher Anmeldung.
         </p>
         <div class="code-row">
           <span class="code-value" id="auth-code">––––––––</span>
-          <button class="btn btn-small" id="copy-code-btn">Kopieren</button>
+          <button class="btn btn-small" id="copy-code-btn" data-i18n="auth.copy">Kopieren</button>
         </div>
         <a class="auth-link" id="auth-link" href="#">Anmeldeseite öffnen</a>
         <div class="modal-status" id="auth-status">
           <span class="spinner"></span> Warte auf Anmeldung …
         </div>
         <div class="modal-actions">
-          <button class="btn" id="auth-cancel-btn">Schließen</button>
+          <button class="btn" id="auth-cancel-btn" data-i18n="common.close">Schließen</button>
         </div>
       </div>
     </div>
 
     <div class="modal-backdrop" id="whatsnew-modal" hidden>
       <div class="modal modal-wide">
-        <h2>Was ist neu</h2>
-        <p class="modal-desc" id="whatsnew-version">Version 0.1.0</p>
+        <h2 data-i18n="whatsnew.title">Was ist neu</h2>
+        <p class="modal-desc" id="whatsnew-version">Version 0.2.0</p>
         <div class="changelog" id="whatsnew-body"></div>
         <div class="modal-actions">
-          <button class="btn btn-strong" id="whatsnew-close-btn">Schließen</button>
+          <button class="btn btn-strong" id="whatsnew-close-btn" data-i18n="common.close">Schließen</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="settings-modal" hidden>
+      <div class="modal">
+        <h2 data-i18n="settings.title">Einstellungen</h2>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label" data-i18n="settings.language">Sprache</div>
+            <div class="setting-sub muted" data-i18n="settings.language.sub">Sprache der Oberfläche</div>
+          </div>
+          <select class="select" id="language-select"></select>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label" data-i18n="settings.updates">Updates</div>
+            <div class="setting-sub muted" id="settings-version">v0.2.0</div>
+          </div>
+          <button class="btn" id="check-update-btn" data-i18n="settings.checkUpdates">Nach Updates suchen</button>
+        </div>
+        <div class="setting-status" id="update-check-status"></div>
+
+        <div class="modal-actions">
+          <button class="btn btn-strong" id="settings-close-btn" data-i18n="common.close">Schließen</button>
         </div>
       </div>
     </div>

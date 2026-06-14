@@ -19,6 +19,10 @@ pub struct Config {
     pub server_address: String,
     #[serde(default)]
     pub accounts: Vec<Account>,
+    /// Selected UI language code (e.g. "de", "en"). `None` lets the frontend
+    /// pick a sensible default (OS locale, falling back to English).
+    #[serde(default)]
+    pub language: Option<String>,
     /// The app version the user last saw the changelog for. Used to decide
     /// whether to surface the "What's new" screen after an update. `None` on a
     /// fresh install (no changelog is shown for a first run).

@@ -1,5 +1,8 @@
+import * as i18n from "./i18n.js";
+
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+const t = i18n.t;
 
 // ---------- State ----------
 let accounts = []; // {id,label,username,uuid,selected,status,connectedAt,error}
@@ -24,12 +27,14 @@ const authCode = $("#auth-code");
 const authLink = $("#auth-link");
 const authStatus = $("#auth-status");
 
-const STATUS = {
-  disconnected: { text: "Getrennt", cls: "" },
-  connecting: { text: "Verbinde …", cls: "connecting" },
-  connected: { text: "Verbunden", cls: "connected" },
-  error: { text: "Fehler", cls: "error" },
+// CSS class per status; the label text comes from the active language.
+const STATUS_CLS = {
+  disconnected: "",
+  connecting: "connecting",
+  connected: "connected",
+  error: "error",
 };
+const statusLabel = (s) => t(`status.${s}`);
 
 // ---------- Rendering ----------
 function render() {
@@ -50,8 +55,8 @@ function render() {
 function subText(acc) {
   if (acc.status === "connected") {
     return acc.cpu != null
-      ? `CPU ${acc.cpu} % · RAM ${acc.mem} MB`
-      : "läuft …";
+      ? t("account.metrics", { cpu: acc.cpu, mem: acc.mem })
+      : t("account.running");
   }
   if (acc.status === "error" && acc.error) return acc.error;
   return acc.uuid || "";
@@ -77,7 +82,7 @@ function updateOverall() {
 function buildRow(acc) {
   const node = rowTpl.content.firstElementChild.cloneNode(true);
   node.dataset.id = acc.id;
-  const status = STATUS[acc.status] || STATUS.disconnected;
+  const cls = STATUS_CLS[acc.status] ?? "";
   const connected = acc.status === "connected";
 
   if (connected) node.classList.add("is-connected");
@@ -91,11 +96,11 @@ function buildRow(acc) {
   node.querySelector(".account-sub").textContent = subText(acc);
 
   const statusText = node.querySelector(".status-text");
-  statusText.className = "status-text " + status.cls;
+  statusText.className = "status-text " + cls;
   statusText.textContent =
     acc.status === "connecting" && acc.attempt
-      ? `Reconnect #${acc.attempt}`
-      : status.text;
+      ? t("status.reconnect", { n: acc.attempt })
+      : statusLabel(acc.status);
 
   const uptimeEl = node.querySelector(".uptime");
   uptimeEl.dataset.connectedAt = connected && acc.connectedAt ? acc.connectedAt : "";
@@ -103,15 +108,16 @@ function buildRow(acc) {
 
   const connectBtn = node.querySelector(".btn-connect");
   const busy = acc.status === "connecting" || acc.status === "connected";
-  connectBtn.textContent = busy ? "Trennen" : "Verbinden";
+  connectBtn.textContent = busy ? t("account.disconnect") : t("account.connect");
   connectBtn.classList.toggle("is-connected", busy);
   connectBtn.addEventListener("click", () =>
     busy ? stopAccount(acc.id) : startAccount(acc.id)
   );
 
-  node
-    .querySelector(".btn-remove")
-    .addEventListener("click", () => removeAccount(acc.id));
+  const removeBtn = node.querySelector(".btn-remove");
+  removeBtn.textContent = t("account.remove");
+  removeBtn.title = t("account.remove.title");
+  removeBtn.addEventListener("click", () => removeAccount(acc.id));
 
   return node;
 }
@@ -142,8 +148,8 @@ function syncSelectAll() {
 }
 
 // ---------- Actions ----------
-async function loadState() {
-  const state = await invoke("get_state");
+async function loadState(state) {
+  if (!state) state = await invoke("get_state");
   accounts = (state.accounts || []).map((a) => ({
     id: a.id,
     username: a.username,
@@ -166,7 +172,7 @@ serverInput.addEventListener("input", () => {
   serverSaveTimer = setTimeout(async () => {
     serverAddress = serverInput.value.trim();
     await invoke("set_server", { address: serverAddress });
-    serverHint.textContent = "Gespeichert";
+    serverHint.textContent = t("common.saved");
     serverHint.classList.add("show");
     setTimeout(() => serverHint.classList.remove("show"), 1400);
   }, 400);
@@ -188,7 +194,7 @@ selectAllEl.addEventListener("change", async () => {
 
 async function startAccount(id) {
   if (!serverAddress) {
-    toast("Bitte zuerst eine Server-Adresse eintragen.", true);
+    toast(t("toast.noServer"), true);
     return;
   }
   updateStatus(id, "connecting");
@@ -217,12 +223,12 @@ async function removeAccount(id) {
 
 $("#start-selected-btn").addEventListener("click", async () => {
   if (!serverAddress) {
-    toast("Bitte zuerst eine Server-Adresse eintragen.", true);
+    toast(t("toast.noServer"), true);
     return;
   }
   const selected = accounts.filter((a) => a.selected);
   if (!selected.length) {
-    toast("Keine Accounts ausgewählt.", true);
+    toast(t("toast.noneSelected"), true);
     return;
   }
   for (const a of selected) {
@@ -249,9 +255,9 @@ $("#add-account-btn").addEventListener("click", async () => {
 
 function openAuthModal() {
   authCode.textContent = "––––––––";
-  authLink.textContent = "Anmeldeseite öffnen";
+  authLink.textContent = t("auth.openPage");
   authLink.dataset.url = "";
-  setAuthStatus("waiting", "Code wird angefordert …");
+  setAuthStatus("waiting", t("auth.requestingCode"));
   authModal.hidden = false;
 }
 
@@ -308,7 +314,7 @@ listen("auth:code", (e) => {
   authCode.textContent = user_code;
   authLink.dataset.url = verification_uri;
   authLink.textContent = verification_uri;
-  setAuthStatus("waiting", "Warte auf Anmeldung …");
+  setAuthStatus("waiting", t("auth.waiting"));
   // auto-open the verification page
   invoke("open_url", { url: verification_uri }).catch(() => {});
 });
@@ -329,7 +335,7 @@ listen("auth:success", (e) => {
       selected: true,
     });
   }
-  setAuthStatus("success", `${acc.username} angemeldet`);
+  setAuthStatus("success", t("auth.signedIn", { username: acc.username }));
   render();
   setTimeout(() => (authModal.hidden = true), 1200);
 });
@@ -430,7 +436,7 @@ function renderMarkdown(md) {
 }
 
 function openWhatsNew(wn) {
-  whatsnewVersion.textContent = "Version " + wn.version;
+  whatsnewVersion.textContent = t("whatsnew.version", { version: wn.version });
   whatsnewBody.innerHTML = renderMarkdown(wn.notes);
   whatsnewModal.hidden = false;
 }
@@ -439,6 +445,7 @@ async function initVersion() {
   try {
     const v = await invoke("get_app_version");
     versionText.textContent = "v" + v;
+    if (settingsVersion) settingsVersion.textContent = "v" + v;
   } catch {}
 }
 
@@ -451,16 +458,18 @@ async function showWhatsNewIfUpdated() {
   } catch {}
 }
 
+function showUpdateBanner(version) {
+  availableVersion = version;
+  updateDot.hidden = false;
+  updateBannerText.textContent = t("update.available", { version });
+  updateBanner.hidden = false;
+}
+
 // Silent background check on launch. Stays quiet when offline or in dev.
 async function checkForUpdate() {
   try {
     const meta = await invoke("check_for_update");
-    if (meta && meta.available) {
-      availableVersion = meta.version;
-      updateDot.hidden = false;
-      updateBannerText.textContent = `Version ${meta.version} verfügbar`;
-      updateBanner.hidden = false;
-    }
+    if (meta && meta.available) showUpdateBanner(meta.version);
   } catch {
     // No reachable updater endpoint — nothing to show.
   }
@@ -470,7 +479,7 @@ versionBadge.addEventListener("click", async () => {
   try {
     const wn = await invoke("get_changelog", { version: null });
     if (wn) openWhatsNew(wn);
-    else toast("Kein Changelog für diese Version gefunden.");
+    else toast(t("whatsnew.none"));
   } catch {}
 });
 
@@ -491,7 +500,7 @@ updateInstallBtn.addEventListener("click", async () => {
   updateInstallBtn.disabled = true;
   updateDismissBtn.disabled = true;
   updateProgress.hidden = false;
-  updateBannerText.textContent = `Lade Version ${availableVersion} …`;
+  updateBannerText.textContent = t("update.downloading", { version: availableVersion });
   try {
     await invoke("install_update");
     // On success the app relaunches into the new version — usually unreachable.
@@ -501,7 +510,7 @@ updateInstallBtn.addEventListener("click", async () => {
     updateDismissBtn.disabled = false;
     updateProgress.hidden = true;
     updateProgressBar.style.width = "0";
-    updateBannerText.textContent = "Update fehlgeschlagen";
+    updateBannerText.textContent = t("update.failed");
     toast(String(e), true);
   }
 });
@@ -511,19 +520,95 @@ listen("update:progress", (e) => {
   if (total) {
     const pct = Math.min(100, Math.round((downloaded / total) * 100));
     updateProgressBar.style.width = pct + "%";
-    updateBannerText.textContent = `Lade Version ${availableVersion} … ${pct}%`;
+    updateBannerText.textContent = t("update.downloadingPct", { version: availableVersion, pct });
   }
 });
 
 listen("update:downloaded", () => {
   updateProgressBar.style.width = "100%";
-  updateBannerText.textContent = "Installiere … App startet neu";
+  updateBannerText.textContent = t("update.installing");
+});
+
+// ---------- Settings ----------
+const settingsModal = $("#settings-modal");
+const languageSelect = $("#language-select");
+const settingsVersion = $("#settings-version");
+const updateCheckStatus = $("#update-check-status");
+const checkUpdateBtn = $("#check-update-btn");
+
+function populateLanguages() {
+  const langs = i18n.getAvailable();
+  languageSelect.innerHTML = "";
+  for (const [code, name] of Object.entries(langs)) {
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = name;
+    languageSelect.appendChild(opt);
+  }
+  languageSelect.value = i18n.getLanguage();
+}
+
+async function applyLanguage(code) {
+  await i18n.setLanguage(code); // updates every [data-i18n] element
+  render(); // rebuild dynamic account rows in the new language
+  if (availableVersion) {
+    updateBannerText.textContent = t("update.available", { version: availableVersion });
+  }
+  updateCheckStatus.textContent = "";
+  updateCheckStatus.classList.remove("error");
+}
+
+$("#settings-btn").addEventListener("click", () => {
+  populateLanguages();
+  updateCheckStatus.textContent = "";
+  updateCheckStatus.classList.remove("error");
+  settingsModal.hidden = false;
+});
+
+$("#settings-close-btn").addEventListener("click", () => {
+  settingsModal.hidden = true;
+});
+settingsModal.addEventListener("click", (e) => {
+  if (e.target === settingsModal) settingsModal.hidden = true;
+});
+
+languageSelect.addEventListener("change", async () => {
+  const code = languageSelect.value;
+  await applyLanguage(code);
+  invoke("set_language", { language: code }).catch(() => {});
+});
+
+checkUpdateBtn.addEventListener("click", async () => {
+  updateCheckStatus.classList.remove("error");
+  updateCheckStatus.textContent = t("settings.checking");
+  checkUpdateBtn.disabled = true;
+  try {
+    const meta = await invoke("check_for_update");
+    if (meta && meta.available) {
+      showUpdateBanner(meta.version);
+      updateCheckStatus.textContent = t("update.available", { version: meta.version });
+    } else {
+      updateCheckStatus.textContent = t("settings.upToDate");
+    }
+  } catch {
+    updateCheckStatus.classList.add("error");
+    updateCheckStatus.textContent = t("settings.checkFailed");
+  } finally {
+    checkUpdateBtn.disabled = false;
+  }
 });
 
 // ---------- Boot ----------
-window.addEventListener("DOMContentLoaded", () => {
-  loadState();
+async function boot() {
+  await i18n.loadAvailable();
+  let state = {};
+  try {
+    state = await invoke("get_state");
+  } catch {}
+  await i18n.setLanguage(i18n.pickDefault(state.language));
+  loadState(state);
   initVersion();
   showWhatsNewIfUpdated();
   checkForUpdate();
-});
+}
+window.addEventListener("DOMContentLoaded", boot);

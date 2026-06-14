@@ -65,6 +65,16 @@ the new version. After updating, a **"What's new"** screen shows you what
 changed. You can reopen it any time by clicking the version number in the top
 right. The full history lives in the [changelog](CHANGELOG.md).
 
+## Languages
+
+lodestone ships in English and German. Pick your language in **Settings** (the
+gear icon in the top right), where you can also check for updates.
+
+Adding a language is just a file change. Copy `src/locales/en.json` to
+`src/locales/<code>.json`, translate the values, and add one line to
+`src/locales/index.json` that maps the code to a display name, for example
+`"fr": "Français"`. The new language then appears in the settings dropdown.
+
 ## Your accounts & privacy
 
 - **No passwords are ever stored.** Only the renewable tokens Microsoft issues.

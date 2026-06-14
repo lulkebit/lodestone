@@ -10,6 +10,16 @@ automatisch in der App unter „Was ist neu" angezeigt.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-14
+
+### Hinzugefügt
+
+- Mehrsprachige Oberfläche (Deutsch und Englisch), umschaltbar im
+  Einstellungs-Fenster.
+- Neue Sprachen lassen sich über einfache JSON-Dateien im Ordner `locales`
+  ergänzen, ganz ohne Code-Änderung.
+- Einstellungs-Fenster mit Sprachwahl und manueller Update-Suche.
+
 ## [0.1.0] - 2026-06-14
 
 Erste Veröffentlichung. 🎉

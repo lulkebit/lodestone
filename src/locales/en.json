@@ -1,0 +1,68 @@
+{
+  "app.subtitle": "Headless Minecraft AFK Manager",
+
+  "server.label": "Server",
+  "server.placeholder": "mc.example.net or 192.168.0.10:25565",
+
+  "stats.cpu": "CPU",
+  "stats.ram": "RAM",
+  "stats.bots": "Bots",
+
+  "accounts.title": "Accounts",
+  "accounts.add": "+ Add",
+  "accounts.empty.title": "No accounts yet.",
+  "accounts.empty.sub": "Add a Microsoft account to get started.",
+
+  "actions.all": "All",
+  "actions.stopAll": "Disconnect all",
+  "actions.startSelected": "Start selected",
+
+  "account.connect": "Connect",
+  "account.disconnect": "Disconnect",
+  "account.remove": "Remove",
+  "account.remove.title": "Remove account",
+  "account.running": "running …",
+  "account.metrics": "CPU {cpu}% · RAM {mem} MB",
+
+  "status.disconnected": "Disconnected",
+  "status.connecting": "Connecting …",
+  "status.connected": "Connected",
+  "status.error": "Error",
+  "status.reconnect": "Reconnect #{n}",
+
+  "auth.title": "Microsoft sign-in",
+  "auth.desc": "Open the sign-in page and enter the code. This window closes automatically once you're signed in.",
+  "auth.copy": "Copy",
+  "auth.openPage": "Open sign-in page",
+  "auth.requestingCode": "Requesting code …",
+  "auth.waiting": "Waiting for sign-in …",
+  "auth.signedIn": "{username} signed in",
+
+  "whatsnew.title": "What's new",
+  "whatsnew.version": "Version {version}",
+  "whatsnew.none": "No changelog found for this version.",
+
+  "update.available": "Version {version} available",
+  "update.later": "Later",
+  "update.install": "Update now",
+  "update.downloading": "Downloading version {version} …",
+  "update.downloadingPct": "Downloading version {version} … {pct}%",
+  "update.installing": "Installing … the app will restart",
+  "update.failed": "Update failed",
+
+  "settings.title": "Settings",
+  "settings.open": "Settings",
+  "settings.language": "Language",
+  "settings.language.sub": "Interface language",
+  "settings.updates": "Updates",
+  "settings.checkUpdates": "Check for updates",
+  "settings.checking": "Checking …",
+  "settings.upToDate": "You're up to date.",
+  "settings.checkFailed": "Check failed.",
+
+  "toast.noServer": "Please enter a server address first.",
+  "toast.noneSelected": "No accounts selected.",
+
+  "common.saved": "Saved",
+  "common.close": "Close"
+}
