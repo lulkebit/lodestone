@@ -18,6 +18,13 @@ _Supported Minecraft version: `1.21.11`._
 > minimal CPU and memory. No game client, no extra windows. You sign in once
 > with Microsoft and lodestone handles the rest.
 
+<p align="center">
+  <img
+    src="screenshots/app.png"
+    alt="lodestone main window with server input, resource stats, and account list"
+  />
+</p>
+
 ## Features
 
 - **Multiple accounts**: add as many Microsoft accounts as you like and keep
