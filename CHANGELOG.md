@@ -10,6 +10,12 @@ automatisch in der App unter „Was ist neu" angezeigt.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-14
+
+### Hinzugefügt
+
+- …
+
 ## [0.2.0] - 2026-06-14
 
 ### Hinzugefügt
