@@ -10,6 +10,14 @@ automatisch in der App unter „Was ist neu" angezeigt.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-14
+
+### Fixed
+
+- The Windows and Linux release builds failed to compile because a macOS-only
+  window event was used on every platform. The dock-icon restore behaviour is
+  now macOS-only, so all platforms build again.
+
 ## [0.3.0] - 2026-06-14
 
 ### Added
