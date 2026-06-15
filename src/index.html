@@ -11,7 +11,7 @@
       <header class="topbar">
         <div class="brand">
           <img src="assets/logo.png" alt="" class="logo" width="28" height="28" />
-          <div>
+          <div class="brand-text">
             <h1>lodestone</h1>
             <p class="subtitle" data-i18n="app.subtitle">Headless Minecraft AFK Manager</p>
           </div>
@@ -21,74 +21,79 @@
             <span id="version-text"></span>
             <span class="update-dot" id="update-dot" hidden></span>
           </button>
-          <button class="icon-btn" id="settings-btn" type="button" data-i18n-title="settings.open" title="Einstellungen">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-          </button>
+          <button class="icon-btn" id="settings-btn" type="button" data-i18n-title="settings.open" title="Einstellungen" data-icon="settings"></button>
         </div>
       </header>
 
-      <div class="update-banner" id="update-banner" hidden>
+      <div class="update-banner" id="update-banner" role="status" hidden>
         <div class="update-banner-main">
-          <span class="update-banner-text" id="update-banner-text">Neue Version verfügbar</span>
+          <span class="update-banner-text" id="update-banner-text"></span>
           <div class="update-progress" id="update-progress" hidden>
             <div class="update-progress-bar" id="update-progress-bar"></div>
           </div>
         </div>
         <div class="update-banner-actions">
-          <button class="btn" id="update-dismiss-btn" data-i18n="update.later">Später</button>
-          <button class="btn btn-strong" id="update-install-btn" data-i18n="update.install">Aktualisieren</button>
+          <button class="btn btn-ghost" id="update-dismiss-btn" type="button" data-i18n="update.later">Später</button>
+          <button class="btn btn-primary" id="update-install-btn" type="button" data-i18n="update.install">Aktualisieren</button>
         </div>
       </div>
 
-      <section class="section server-section">
-        <label class="label" for="server-input" data-i18n="server.label">Server</label>
-        <div class="server-row">
-          <input
-            id="server-input"
-            type="text"
-            data-i18n-placeholder="server.placeholder"
-            placeholder="mc.example.net oder 192.168.0.10:25565"
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <span class="save-hint" id="server-save-hint" data-i18n="common.saved">Gespeichert</span>
-        </div>
-      </section>
-
-      <section class="section stats-section">
-        <div class="stat">
-          <span class="stat-label" data-i18n="stats.cpu">CPU</span>
-          <span class="stat-value" id="overall-cpu">0&nbsp;%</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label" data-i18n="stats.ram">RAM</span>
-          <span class="stat-value" id="overall-mem">0&nbsp;MB</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label" data-i18n="stats.bots">Bots</span>
-          <span class="stat-value" id="overall-bots">0</span>
-        </div>
-      </section>
-
-      <section class="section accounts-section">
-        <div class="accounts-header">
-          <div class="accounts-title">
-            <span class="label" data-i18n="accounts.title">Accounts</span>
-            <span class="count" id="account-count">0</span>
+      <main class="content">
+        <section class="section server-section">
+          <label class="label" for="server-input" data-i18n="server.label">Server</label>
+          <div class="server-row">
+            <span class="field-ico" data-icon="server" data-icon-size="16" aria-hidden="true"></span>
+            <input
+              id="server-input"
+              type="text"
+              data-i18n-placeholder="server.placeholder"
+              placeholder="mc.example.net oder 192.168.0.10:25565"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <span class="save-hint" id="server-save-hint" data-i18n="common.saved">Gespeichert</span>
           </div>
-          <button class="btn" id="add-account-btn" data-i18n="accounts.add">+ Hinzufügen</button>
-        </div>
+        </section>
 
-        <div class="accounts-list" id="accounts-list"></div>
+        <section class="section stats-section" aria-label="Ressourcen">
+          <div class="stat">
+            <span class="stat-ico" data-icon="cpu" data-icon-size="15" aria-hidden="true"></span>
+            <span class="stat-label" data-i18n="stats.cpu">CPU</span>
+            <span class="stat-value" id="overall-cpu">0&nbsp;%</span>
+          </div>
+          <div class="stat">
+            <span class="stat-ico" data-icon="ram" data-icon-size="15" aria-hidden="true"></span>
+            <span class="stat-label" data-i18n="stats.ram">RAM</span>
+            <span class="stat-value" id="overall-mem">0&nbsp;MB</span>
+          </div>
+          <div class="stat">
+            <span class="stat-ico" data-icon="users" data-icon-size="15" aria-hidden="true"></span>
+            <span class="stat-label" data-i18n="stats.bots">Bots</span>
+            <span class="stat-value" id="overall-bots">0</span>
+          </div>
+        </section>
 
-        <div class="empty-state" id="empty-state">
-          <p data-i18n="accounts.empty.title">Noch keine Accounts.</p>
-          <p class="muted" data-i18n="accounts.empty.sub">Microsoft-Account hinzufügen, um zu starten.</p>
-        </div>
-      </section>
+        <section class="section accounts-section">
+          <div class="accounts-header">
+            <div class="accounts-title">
+              <span class="label" data-i18n="accounts.title">Accounts</span>
+              <span class="count" id="account-count">0</span>
+            </div>
+            <button class="btn btn-ghost" id="add-account-btn" type="button">
+              <span data-icon="add" data-icon-size="16" aria-hidden="true"></span>
+              <span data-i18n="accounts.add">Hinzufügen</span>
+            </button>
+          </div>
+
+          <ul class="accounts-list" id="accounts-list" hidden></ul>
+
+          <div class="empty-state" id="empty-state">
+            <span class="empty-ico" data-icon="users" data-icon-size="30" aria-hidden="true"></span>
+            <p data-i18n="accounts.empty.title">Noch keine Accounts.</p>
+            <p class="muted" data-i18n="accounts.empty.sub">Microsoft-Account hinzufügen, um zu starten.</p>
+          </div>
+        </section>
+      </main>
 
       <footer class="actionbar">
         <label class="select-all">
@@ -96,80 +101,86 @@
           <span data-i18n="actions.all">Alle</span>
         </label>
         <div class="spacer"></div>
-        <button class="btn" id="stop-all-btn" data-i18n="actions.stopAll">Alle trennen</button>
-        <button class="btn btn-strong" id="start-selected-btn" data-i18n="actions.startSelected">Ausgewählte starten</button>
+        <button class="btn btn-ghost" id="stop-all-btn" type="button" data-i18n="actions.stopAll">Alle trennen</button>
+        <button class="btn btn-primary" id="start-selected-btn" type="button" data-i18n="actions.startSelected">Ausgewählte starten</button>
       </footer>
     </div>
 
     <template id="account-row-template">
-      <div class="account-row" data-id="">
-        <input type="checkbox" class="account-select" />
-        <img class="account-avatar" alt="" width="32" height="32" />
+      <li class="account">
+        <label class="check">
+          <input type="checkbox" class="account-select" />
+        </label>
+        <span class="avatar"></span>
         <div class="account-info">
-          <div class="account-name"></div>
-          <div class="account-sub muted"></div>
+          <span class="account-name"></span>
+          <span class="account-sub muted"></span>
         </div>
         <div class="account-status">
-          <span class="status-text">Getrennt</span>
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-text"></span>
           <span class="uptime"></span>
         </div>
         <div class="account-actions">
-          <button class="btn btn-small btn-connect">Verbinden</button>
-          <button class="btn btn-small btn-remove" title="Account entfernen">Entfernen</button>
+          <button class="btn btn-ghost btn-connect" type="button"></button>
+          <button class="icon-btn btn-remove" type="button"></button>
         </div>
-      </div>
+      </li>
     </template>
 
     <div class="modal-backdrop" id="auth-modal" hidden>
-      <div class="modal">
-        <h2 data-i18n="auth.title">Microsoft-Anmeldung</h2>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+        <h2 id="auth-modal-title" data-i18n="auth.title">Microsoft-Anmeldung</h2>
         <p class="modal-desc" data-i18n="auth.desc">
           Öffne die Anmeldeseite und gib den Code ein. Das Fenster schließt sich
           automatisch nach erfolgreicher Anmeldung.
         </p>
         <div class="code-row">
           <span class="code-value" id="auth-code">––––––––</span>
-          <button class="btn btn-small" id="copy-code-btn" data-i18n="auth.copy">Kopieren</button>
+          <button class="icon-btn" id="copy-code-btn" type="button" data-i18n-title="auth.copy" title="Kopieren" data-icon="copy" data-icon-size="17"></button>
         </div>
-        <a class="auth-link" id="auth-link" href="#">Anmeldeseite öffnen</a>
+        <a class="auth-link" id="auth-link" href="#" data-i18n="auth.openPage">Anmeldeseite öffnen</a>
         <div class="modal-status" id="auth-status">
-          <span class="spinner"></span> Warte auf Anmeldung …
+          <span class="spinner"></span> <span data-i18n="auth.waiting">Warte auf Anmeldung …</span>
         </div>
         <div class="modal-actions">
-          <button class="btn" id="auth-cancel-btn" data-i18n="common.close">Schließen</button>
+          <button class="btn" id="auth-cancel-btn" type="button" data-i18n="common.close">Schließen</button>
         </div>
       </div>
     </div>
 
     <div class="modal-backdrop" id="whatsnew-modal" hidden>
-      <div class="modal modal-wide">
-        <h2 data-i18n="whatsnew.title">Was ist neu</h2>
+      <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="whatsnew-modal-title">
+        <h2 id="whatsnew-modal-title" data-i18n="whatsnew.title">Was ist neu</h2>
         <p class="modal-desc" id="whatsnew-version"></p>
         <div class="changelog" id="whatsnew-body"></div>
         <div class="modal-actions">
-          <button class="btn btn-strong" id="whatsnew-close-btn" data-i18n="common.close">Schließen</button>
+          <button class="btn btn-primary" id="whatsnew-close-btn" type="button" data-i18n="common.close">Schließen</button>
         </div>
       </div>
     </div>
 
     <div class="modal-backdrop" id="settings-modal" hidden>
-      <div class="modal">
-        <h2 data-i18n="settings.title">Einstellungen</h2>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+        <h2 id="settings-modal-title" data-i18n="settings.title">Einstellungen</h2>
 
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label" data-i18n="settings.language">Sprache</div>
+            <div class="setting-label" id="set-lang-label" data-i18n="settings.language">Sprache</div>
             <div class="setting-sub muted" data-i18n="settings.language.sub">Sprache der Oberfläche</div>
           </div>
-          <select class="select" id="language-select"></select>
+          <select class="select" id="language-select" aria-labelledby="set-lang-label"></select>
         </div>
 
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label" data-i18n="settings.avatars">Avatare anzeigen</div>
+            <div class="setting-label" id="set-avatars-label" data-i18n="settings.avatars">Avatare anzeigen</div>
             <div class="setting-sub muted" data-i18n="settings.avatars.sub">Skin-Köpfe von mc-heads.net laden und lokal zwischenspeichern</div>
           </div>
-          <input type="checkbox" id="avatars-toggle" />
+          <label class="switch">
+            <input type="checkbox" id="avatars-toggle" aria-labelledby="set-avatars-label" />
+            <span class="switch-track" aria-hidden="true"></span>
+          </label>
         </div>
 
         <div class="setting-row">
@@ -177,28 +188,28 @@
             <div class="setting-label" data-i18n="settings.updates">Updates</div>
             <div class="setting-sub muted" id="settings-version"></div>
           </div>
-          <button class="btn" id="check-update-btn" data-i18n="settings.checkUpdates">Nach Updates suchen</button>
+          <button class="btn btn-ghost" id="check-update-btn" type="button" data-i18n="settings.checkUpdates">Nach Updates suchen</button>
         </div>
-        <div class="setting-status" id="update-check-status"></div>
+        <div class="setting-status" id="update-check-status" role="status"></div>
 
         <div class="modal-actions">
-          <button class="btn btn-strong" id="settings-close-btn" data-i18n="common.close">Schließen</button>
+          <button class="btn btn-primary" id="settings-close-btn" type="button" data-i18n="common.close">Schließen</button>
         </div>
       </div>
     </div>
 
     <div class="modal-backdrop" id="confirm-modal" hidden>
-      <div class="modal">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <h2 id="confirm-title"></h2>
         <p class="modal-desc" id="confirm-body"></p>
         <div class="modal-actions confirm-actions">
-          <button class="btn" id="confirm-cancel-btn" data-i18n="common.cancel">Abbrechen</button>
-          <button class="btn btn-strong" id="confirm-ok-btn" data-i18n="account.remove">Entfernen</button>
+          <button class="btn" id="confirm-cancel-btn" type="button" data-i18n="common.cancel">Abbrechen</button>
+          <button class="btn btn-danger" id="confirm-ok-btn" type="button" data-i18n="account.remove">Entfernen</button>
         </div>
       </div>
     </div>
 
-    <div class="toast-container" id="toast-container"></div>
+    <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
     <script type="module" src="main.js"></script>
   </body>

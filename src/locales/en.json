@@ -9,7 +9,7 @@
   "stats.bots": "Bots",
 
   "accounts.title": "Accounts",
-  "accounts.add": "+ Add",
+  "accounts.add": "Add",
   "accounts.empty.title": "No accounts yet.",
   "accounts.empty.sub": "Add a Microsoft account to get started.",
 
@@ -19,6 +19,7 @@
 
   "account.connect": "Connect",
   "account.disconnect": "Disconnect",
+  "account.select": "Select {name}",
   "account.remove": "Remove",
   "account.remove.title": "Remove account",
   "account.running": "running …",

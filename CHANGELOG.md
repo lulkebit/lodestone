@@ -21,6 +21,13 @@ automatisch in der App unter „Was ist neu" angezeigt.
 
 ### Added
 
+- **A redesigned interface.** lodestone got a full visual refresh: a cleaner,
+  flat, typographic look with a consistent icon set, clearer per-account status
+  (a coloured dot plus label for connected, connecting, and error), a tidier
+  account list, and a proper toggle for the avatars setting.
+- **More accessible throughout.** Visible keyboard focus rings, dialog roles and
+  labels, Escape to close any dialog, labelled icon buttons, and respect for the
+  system "reduce motion" setting.
 - **Avatars can be turned off.** A new setting controls whether Minecraft head
   avatars are loaded at all. With them on, each head is fetched once and cached
   locally, so the list works offline afterwards and a UUID leaves your machine at
@@ -32,6 +39,8 @@ automatisch in der App unter „Was ist neu" angezeigt.
   cascade and bring the whole app down.
 - The app version now has a single source of truth, removing the version drift
   that could publish a build under the wrong number.
+- The frontend was split into focused modules (state, API, icons, and one module
+  per view), which makes the UI easier to maintain and extend.
 
 ## [0.4.1] - 2026-06-15
 
