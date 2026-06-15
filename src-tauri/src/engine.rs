@@ -1,14 +1,32 @@
+//! Headless Minecraft engine, powered by [azalea] (pure Rust, no Node).
+//!
+//! All bots run inside this process. azalea drives each client through a Bevy
+//! ECS app whose runner uses `tokio::task::spawn_local`, so every bot — and the
+//! Microsoft logins — must live on a single thread that owns a `LocalSet`. We
+//! spawn that thread once and talk to it over a command channel; the bots emit
+//! the same `bot:status` / `auth:*` events the frontend already listens for.
+//!
+//! Because the bots share one process we can no longer report CPU/RAM per
+//! account; a small task samples the whole process instead (`app:metrics`).
+
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::process::Stdio;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde_json::{json, Value};
+use azalea::prelude::*;
+use azalea_auth::cache::ExpiringValue;
+use azalea_auth::{
+    get_minecraft_token, get_ms_auth_token, get_ms_link_code, get_profile, refresh_ms_auth_token,
+    AccessTokenResponse, ProfileResponse,
+};
+use serde_json::json;
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::Notify;
+use tokio::time::{interval, sleep};
 
-use crate::store::{Account, Store};
+use crate::store::{Account as StoredAccount, Store};
 
 /// Live (non-persisted) connection state for an account, keyed by account id.
 #[derive(Clone, Default)]
@@ -17,278 +35,424 @@ pub struct StatusInfo {
     pub connected_at: Option<i64>,
 }
 
-/// Spawns one Node process per bot (real per-account CPU/RAM) plus a short-lived
-/// process per Microsoft login. Bridges each child's stdout to the frontend.
+type Statuses = Arc<Mutex<HashMap<String, StatusInfo>>>;
+
+/// Give up only if we never managed to connect (likely ban/whitelist/bad
+/// config). Once connected at least once, reconnect forever.
+const MAX_INITIAL_ATTEMPTS: u32 = 8;
+
+/// Messages from the Tauri (UI) side to the single Minecraft thread.
+enum Cmd {
+    StartBot { id: String, address: String },
+    StopBot { id: String },
+    StopAll,
+    StartLogin { id: String },
+    CancelLogin,
+    /// A bot task finished on its own (gave up / errored). `token` guards against
+    /// removing a freshly restarted bot that reuses the same id.
+    BotExited { id: String, token: u64 },
+}
+
+/// Owns the channel to the Minecraft thread. Cloning is cheap (just the sender).
 pub struct Engine {
-    app: AppHandle,
-    store: Arc<Store>,
-    statuses: Arc<Mutex<HashMap<String, StatusInfo>>>,
-    bots: Arc<Mutex<HashMap<String, Child>>>,
-    login: Arc<Mutex<Option<Child>>>,
-    node: String,
-    login_script: PathBuf,
-    worker_script: PathBuf,
-    cache_dir: PathBuf,
-}
-
-/// Locate a usable `node` binary.
-///
-/// A bundled GUI app does not inherit the user's shell `PATH` (on macOS launchd
-/// hands it only `/usr/bin:/bin:/usr/sbin:/sbin`), so a Homebrew/nvm install is
-/// invisible and a bare `node` spawn fails with ENOENT. We therefore probe the
-/// usual locations and, as a last resort, ask the user's login shell.
-fn resolve_node() -> String {
-    // 1. Explicit override always wins.
-    if let Ok(p) = std::env::var("LODESTONE_NODE") {
-        let p = p.trim().to_string();
-        if !p.is_empty() {
-            return p;
-        }
-    }
-
-    // On Windows the system PATH is inherited by GUI apps, so a plain lookup works.
-    #[cfg(not(windows))]
-    {
-        // 2. Common absolute install locations.
-        for c in [
-            "/opt/homebrew/bin/node", // Apple Silicon Homebrew
-            "/usr/local/bin/node",    // Intel Homebrew / nodejs.org pkg
-            "/usr/bin/node",          // Linux distro packages
-        ] {
-            if std::path::Path::new(c).exists() {
-                return c.to_string();
-            }
-        }
-        // 3. Ask the user's login shell (covers nvm / fnm / volta / asdf).
-        if let Some(p) = node_from_login_shell() {
-            return p;
-        }
-    }
-
-    // 4. Fall back to a PATH lookup.
-    "node".to_string()
-}
-
-/// Resolve `node` through the user's interactive login shell so version managers
-/// that only configure `PATH` in shell rc files (nvm, fnm, …) are picked up.
-#[cfg(not(windows))]
-fn node_from_login_shell() -> Option<String> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-    let out = std::process::Command::new(shell)
-        .args(["-lic", "command -v node"])
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let path = stdout
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .last()?
-        .to_string();
-    if std::path::Path::new(&path).exists() {
-        Some(path)
-    } else {
-        None
-    }
+    cmd_tx: UnboundedSender<Cmd>,
 }
 
 impl Engine {
     pub fn new(
         app: AppHandle,
         store: Arc<Store>,
-        statuses: Arc<Mutex<HashMap<String, StatusInfo>>>,
-        login_script: PathBuf,
-        worker_script: PathBuf,
+        statuses: Statuses,
         cache_dir: PathBuf,
     ) -> Arc<Engine> {
-        let node = resolve_node();
-        Arc::new(Engine {
-            app,
-            store,
-            statuses,
-            bots: Arc::new(Mutex::new(HashMap::new())),
-            login: Arc::new(Mutex::new(None)),
-            node,
-            login_script,
-            worker_script,
-            cache_dir,
-        })
-    }
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        spawn_metrics(app.clone());
 
-    fn spawn_node(&self, script: &PathBuf, args: &[&str]) -> std::io::Result<Child> {
-        let mut cmd = Command::new(&self.node);
-        cmd.arg(script);
-        for a in args {
-            cmd.arg(a);
-        }
-        // stdin stays piped (and is NOT taken): when this process dies the pipe
-        // closes and the child exits itself (see exitWithParent in shared.mjs).
-        cmd.stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        cmd.spawn()
-    }
-
-    /// Forward a child's stderr to our stderr for debugging.
-    fn pipe_stderr(&self, child: &mut Child, tag: &'static str) {
-        if let Some(stderr) = child.stderr.take() {
-            tauri::async_runtime::spawn(async move {
-                let mut lines = BufReader::new(stderr).lines();
-                while let Ok(Some(l)) = lines.next_line().await {
-                    eprintln!("[{tag}] {l}");
-                }
-            });
-        }
-    }
-
-    /// Start the device-code login flow for a fresh account id (cache key).
-    pub async fn start_login(&self, id: String) {
-        let cache = self.cache_dir.to_string_lossy().to_string();
-        let mut child = match self.spawn_node(&self.login_script, &[&id, &cache]) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("[login] spawn failed: {e}");
-                let _ = self.app.emit("auth:error", "bot.error.sidecarStart");
-                return;
-            }
-        };
-        self.pipe_stderr(&mut child, "login");
-        if let Some(stdout) = child.stdout.take() {
-            let (app, store, statuses, login) = (
-                self.app.clone(),
-                self.store.clone(),
-                self.statuses.clone(),
-                self.login.clone(),
-            );
-            tauri::async_runtime::spawn(async move {
-                let mut lines = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    forward_event(&app, &store, &statuses, &line);
-                }
-                *login.lock().unwrap() = None;
-            });
-        }
-        // Storing replaces (and drops → kills) any previous in-flight login.
-        *self.login.lock().unwrap() = Some(child);
-    }
-
-    pub fn cancel_login(&self) {
-        *self.login.lock().unwrap() = None;
-    }
-
-    /// Start a bot for `id` connecting to `address`.
-    pub async fn start_bot(&self, id: String, address: String) {
-        if self.bots.lock().unwrap().contains_key(&id) {
-            return;
-        }
-        let cache = self.cache_dir.to_string_lossy().to_string();
-        let mut child = match self.spawn_node(&self.worker_script, &[&id, &cache, &address]) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("[worker] spawn failed: {e}");
-                self.set_status(&id, "error", None);
-                let _ = self.app.emit(
-                    "bot:status",
-                    json!({ "id": id, "status": "error", "error_key": "bot.error.sidecarStart" }),
+        // azalea's ECS runner relies on `spawn_local`, so the whole engine runs
+        // on a dedicated current-thread runtime with a LocalSet.
+        let tx_for_thread = cmd_tx.clone();
+        std::thread::Builder::new()
+            .name("lodestone-mc".into())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build minecraft runtime");
+                let local = tokio::task::LocalSet::new();
+                local.block_on(
+                    &rt,
+                    manager(app, store, statuses, cache_dir, tx_for_thread, cmd_rx),
                 );
-                crate::update_tray(&self.app);
-                return;
-            }
-        };
-        self.pipe_stderr(&mut child, "worker");
-        if let Some(stdout) = child.stdout.take() {
-            let (app, store, statuses, bots) = (
-                self.app.clone(),
-                self.store.clone(),
-                self.statuses.clone(),
-                self.bots.clone(),
-            );
-            let id2 = id.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut lines = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    forward_event(&app, &store, &statuses, &line);
-                }
-                // Process exited — drop its handle.
-                bots.lock().unwrap().remove(&id2);
-            });
-        }
-        self.bots.lock().unwrap().insert(id, child);
+            })
+            .expect("spawn minecraft thread");
+
+        Arc::new(Engine { cmd_tx })
     }
 
-    /// Stop one bot: dropping the Child closes its stdin + kills it (kill_on_drop).
+    pub fn start_bot(&self, id: String, address: String) {
+        let _ = self.cmd_tx.send(Cmd::StartBot { id, address });
+    }
+
     pub fn stop_bot(&self, id: &str) {
-        let _ = self.bots.lock().unwrap().remove(id);
-        self.set_status(id, "disconnected", None);
-        let _ = self.app.emit(
-            "bot:status",
-            json!({ "id": id, "status": "disconnected", "connected_at": null, "error": "" }),
-        );
-        crate::update_tray(&self.app);
+        let _ = self.cmd_tx.send(Cmd::StopBot { id: id.to_string() });
     }
 
     pub fn stop_all(&self) {
-        let ids: Vec<String> = {
-            let mut b = self.bots.lock().unwrap();
-            b.drain().map(|(k, _)| k).collect()
-        };
-        for id in ids {
-            self.set_status(&id, "disconnected", None);
-            let _ = self.app.emit(
-                "bot:status",
-                json!({ "id": id, "status": "disconnected", "connected_at": null, "error": "" }),
-            );
-        }
-        crate::update_tray(&self.app);
+        let _ = self.cmd_tx.send(Cmd::StopAll);
     }
 
-    fn set_status(&self, id: &str, status: &str, connected_at: Option<i64>) {
-        self.statuses.lock().unwrap().insert(
-            id.to_string(),
-            StatusInfo {
-                status: status.to_string(),
-                connected_at,
-            },
-        );
+    pub fn start_login(&self, id: String) {
+        let _ = self.cmd_tx.send(Cmd::StartLogin { id });
+    }
+
+    pub fn cancel_login(&self) {
+        let _ = self.cmd_tx.send(Cmd::CancelLogin);
     }
 }
 
-/// Parse one stdout line from a sidecar and forward it to the frontend.
-fn forward_event(
-    app: &AppHandle,
-    store: &Store,
-    statuses: &Mutex<HashMap<String, StatusInfo>>,
-    line: &str,
-) {
-    let v: Value = match serde_json::from_str(line) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+/// Per-bot control handle held by the manager.
+struct BotHandle {
+    stop: Arc<Notify>,
+    token: u64,
+}
 
-    match v.get("event").and_then(|e| e.as_str()) {
-        Some("auth_code") => {
-            // A code carrying an account id is a running bot re-authenticating; the
-            // login sidecar sends none. Surface the window so the dialog is seen.
-            if !s("id").is_empty() {
-                crate::show_main(app);
+/// The Minecraft thread's event loop: spawns/stops bot and login tasks.
+async fn manager(
+    app: AppHandle,
+    store: Arc<Store>,
+    statuses: Statuses,
+    cache_dir: PathBuf,
+    cmd_tx: UnboundedSender<Cmd>,
+    mut cmd_rx: UnboundedReceiver<Cmd>,
+) {
+    let mut bots: HashMap<String, BotHandle> = HashMap::new();
+    let mut login: Option<tokio::task::JoinHandle<()>> = None;
+    let mut next_token: u64 = 0;
+
+    while let Some(cmd) = cmd_rx.recv().await {
+        match cmd {
+            Cmd::StartBot { id, address } => {
+                if bots.contains_key(&id) {
+                    continue;
+                }
+                next_token += 1;
+                let token = next_token;
+                let stop = Arc::new(Notify::new());
+                let cache_file = cache_dir.join(format!("{id}.json"));
+                let (app2, statuses2, stop2, tx2, id2) = (
+                    app.clone(),
+                    statuses.clone(),
+                    stop.clone(),
+                    cmd_tx.clone(),
+                    id.clone(),
+                );
+                tokio::task::spawn_local(async move {
+                    run_bot(&app2, &statuses2, &id2, &address, &cache_file, &stop2).await;
+                    let _ = tx2.send(Cmd::BotExited { id: id2, token });
+                });
+                bots.insert(id, BotHandle { stop, token });
             }
-            let _ = app.emit(
-                "auth:code",
-                json!({ "id": s("id"), "user_code": s("user_code"), "verification_uri": s("verification_uri") }),
-            );
+            Cmd::StopBot { id } => {
+                if let Some(b) = bots.remove(&id) {
+                    b.stop.notify_one();
+                }
+                emit_status(&app, &statuses, &id, "disconnected", None, None, None, None);
+            }
+            Cmd::StopAll => {
+                let ids: Vec<String> = bots.keys().cloned().collect();
+                for (_, b) in bots.drain() {
+                    b.stop.notify_one();
+                }
+                for id in ids {
+                    emit_status(&app, &statuses, &id, "disconnected", None, None, None, None);
+                }
+            }
+            Cmd::StartLogin { id } => {
+                // Storing replaces (and aborts) any previous in-flight login.
+                if let Some(h) = login.take() {
+                    h.abort();
+                }
+                let cache_file = cache_dir.join(format!("{id}.json"));
+                let (app2, store2) = (app.clone(), store.clone());
+                login = Some(tokio::task::spawn_local(async move {
+                    run_login(&app2, &store2, &id, &cache_file).await;
+                }));
+            }
+            Cmd::CancelLogin => {
+                if let Some(h) = login.take() {
+                    h.abort();
+                }
+            }
+            Cmd::BotExited { id, token } => {
+                // Only forget it if the entry is still this exact task.
+                if bots.get(&id).map(|b| b.token) == Some(token) {
+                    bots.remove(&id);
+                }
+            }
         }
-        Some("auth_success") => {
-            let (id, username, uuid) = (s("id"), s("username"), s("uuid"));
+    }
+}
+
+/// Run one bot until stopped: authenticate, connect, keep alive with gentle
+/// anti-AFK, and reconnect with backoff on drops. Returns when the user stops it
+/// or when the initial connection gives up.
+async fn run_bot(
+    app: &AppHandle,
+    statuses: &Statuses,
+    id: &str,
+    address: &str,
+    cache_file: &PathBuf,
+    stop: &Notify,
+) {
+    let http = reqwest::Client::new();
+    let addr = clean_address(address);
+    let mut attempts: u32 = 0;
+    let mut ever_connected = false;
+    let mut last_error: Option<String> = None;
+
+    loop {
+        let attempt_n = if attempts > 0 { Some(attempts as i64) } else { None };
+        emit_status(
+            app,
+            statuses,
+            id,
+            "connecting",
+            None,
+            last_error.as_deref(),
+            None,
+            attempt_n,
+        );
+
+        // 1. Authenticate (refresh the token or show a re-auth dialog as needed)
+        //    and build the account azalea will connect with.
+        let account = tokio::select! {
+            r = ensure_account(&http, cache_file, id, app) => r,
+            _ = stop.notified() => return,
+        };
+        let account = match account {
+            Ok(a) => a,
+            Err(e) => {
+                last_error = Some(e.to_string());
+                if give_up(app, statuses, id, &mut attempts, ever_connected, &last_error) {
+                    return;
+                }
+                if wait_with_stop(stop, backoff_delay(attempts)).await {
+                    return;
+                }
+                continue;
+            }
+        };
+
+        // 2. Connect.
+        let joined = tokio::select! {
+            r = Client::join(account, addr.as_str()) => r,
+            _ = stop.notified() => return,
+        };
+        let (client, mut rx) = match joined {
+            Ok(v) => v,
+            Err(e) => {
+                last_error = Some(e.to_string());
+                if give_up(app, statuses, id, &mut attempts, ever_connected, &last_error) {
+                    return;
+                }
+                if wait_with_stop(stop, backoff_delay(attempts)).await {
+                    return;
+                }
+                continue;
+            }
+        };
+
+        // 3. Stay connected: forward status, run gentle anti-AFK, watch for drops.
+        let mut afk = interval(Duration::from_secs(45));
+        afk.tick().await; // discard the immediate first tick
+        let mut yaw: f32 = 0.0;
+        let mut spawned = false;
+        let mut reason: Option<String> = None;
+
+        loop {
+            tokio::select! {
+                _ = stop.notified() => {
+                    client.disconnect();
+                    return;
+                }
+                _ = afk.tick() => {
+                    // A small look turn resets idle-kick timers without moving the
+                    // bot off its spot (unlike walking, which could be dangerous).
+                    if spawned {
+                        yaw = (yaw + 31.0) % 360.0;
+                        client.set_direction(yaw, 0.0);
+                    }
+                }
+                ev = rx.recv() => {
+                    match ev {
+                        None => break, // engine closed the channel: treat as a drop
+                        Some(Event::Login) | Some(Event::Spawn) => {
+                            if !spawned {
+                                spawned = true;
+                                ever_connected = true;
+                                attempts = 0;
+                                last_error = None;
+                                emit_status(
+                                    app, statuses, id, "connected",
+                                    Some(now_secs()), None, None, None,
+                                );
+                            }
+                        }
+                        Some(Event::Disconnect(r)) => {
+                            reason = r.map(|f| f.to_string()).filter(|s| !s.is_empty());
+                            break;
+                        }
+                        Some(_) => {}
+                    }
+                }
+            }
+        }
+
+        client.disconnect();
+        if let Some(r) = reason {
+            last_error = Some(r);
+        }
+        if give_up(app, statuses, id, &mut attempts, ever_connected, &last_error) {
+            return;
+        }
+        if wait_with_stop(stop, backoff_delay(attempts)).await {
+            return;
+        }
+    }
+}
+
+/// Count a failed attempt. If we never connected and have exhausted the initial
+/// budget, emit a terminal `error` status and tell the caller to stop.
+fn give_up(
+    app: &AppHandle,
+    statuses: &Statuses,
+    id: &str,
+    attempts: &mut u32,
+    ever_connected: bool,
+    last_error: &Option<String>,
+) -> bool {
+    *attempts += 1;
+    if !ever_connected && *attempts > MAX_INITIAL_ATTEMPTS {
+        match last_error.as_deref() {
+            Some(e) if !e.is_empty() => {
+                emit_status(app, statuses, id, "error", None, Some(e), None, None)
+            }
+            _ => emit_status(
+                app,
+                statuses,
+                id,
+                "error",
+                None,
+                None,
+                Some("bot.error.connectFailed"),
+                None,
+            ),
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// We cache only the Microsoft refresh token (an `ExpiringValue`). azalea turns
+/// it into a Minecraft session and refreshes it as needed; persisting it lets
+/// the bot reconnect across restarts without a fresh login.
+type CachedMsa = ExpiringValue<AccessTokenResponse>;
+
+fn load_msa(cache_file: &Path) -> Option<CachedMsa> {
+    let data = std::fs::read(cache_file).ok()?;
+    serde_json::from_slice(&data).ok()
+}
+
+fn save_msa(cache_file: &Path, msa: &CachedMsa) -> anyhow::Result<()> {
+    std::fs::write(cache_file, serde_json::to_vec_pretty(msa)?)?;
+    Ok(())
+}
+
+/// Resolve a connectable [`Account`] for `id`: load the cached Microsoft token,
+/// refresh it if expired, or (as a last resort) prompt a re-login in the UI.
+async fn ensure_account(
+    http: &reqwest::Client,
+    cache_file: &Path,
+    id: &str,
+    app: &AppHandle,
+) -> anyhow::Result<Account> {
+    let mut msa = match load_msa(cache_file) {
+        Some(m) => m,
+        None => interactive_login(http, cache_file, id, app, true).await?,
+    };
+
+    // Refresh ourselves (rather than letting azalea do it) so we can persist the
+    // rotated token and fall back to a UI re-login when the refresh token died.
+    if msa.is_expired() {
+        msa = match refresh_ms_auth_token(http, &msa.data.refresh_token, None, None).await {
+            Ok(m) => {
+                save_msa(cache_file, &m)?;
+                m
+            }
+            Err(_) => interactive_login(http, cache_file, id, app, true).await?,
+        };
+    }
+
+    Ok(Account::with_microsoft_access_token(msa).await?)
+}
+
+/// Run a Microsoft device-code login, surfacing the code in the UI, and cache
+/// the Microsoft token so the bot can connect (and later refresh) on its own.
+/// Returns the freshly obtained token.
+async fn interactive_login(
+    http: &reqwest::Client,
+    cache_file: &Path,
+    id: &str,
+    app: &AppHandle,
+    reauth: bool,
+) -> anyhow::Result<CachedMsa> {
+    let code = get_ms_link_code(http, None, None).await?;
+    // An id on the event marks a re-auth of an existing account (the frontend
+    // reopens that account's dialog); the add-account flow sends none.
+    let event_id = if reauth { id } else { "" };
+    let _ = app.emit(
+        "auth:code",
+        json!({
+            "id": event_id,
+            "user_code": code.user_code.clone(),
+            "verification_uri": code.verification_uri.clone(),
+        }),
+    );
+    if reauth {
+        crate::show_main(app);
+    }
+    let msa = get_ms_auth_token(http, code, None).await?;
+    save_msa(cache_file, &msa)?;
+    Ok(msa)
+}
+
+/// Fetch the account's display name and UUID from a Microsoft token.
+async fn fetch_profile(http: &reqwest::Client, msa: &CachedMsa) -> anyhow::Result<ProfileResponse> {
+    let mc = get_minecraft_token(http, &msa.data.access_token).await?;
+    Ok(get_profile(http, &mc.minecraft_access_token).await?)
+}
+
+/// Handle "add account": log in interactively, then persist the new account.
+async fn run_login(app: &AppHandle, store: &Arc<Store>, id: &str, cache_file: &Path) {
+    let http = reqwest::Client::new();
+    let result = async {
+        let msa = interactive_login(&http, cache_file, id, app, false).await?;
+        fetch_profile(&http, &msa).await
+    }
+    .await;
+    match result {
+        Ok(profile) => {
+            let uuid = profile.id.simple().to_string();
+            let username = profile.name.clone();
             {
                 let mut cfg = store.config.lock().unwrap();
                 if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.uuid == uuid) {
-                    acc.id = id.clone();
+                    acc.id = id.to_string();
                     acc.username = username.clone();
                 } else {
-                    cfg.accounts.push(Account {
-                        id: id.clone(),
+                    cfg.accounts.push(StoredAccount {
+                        id: id.to_string(),
                         username: username.clone(),
                         uuid: uuid.clone(),
                         selected: true,
@@ -301,37 +465,93 @@ fn forward_event(
                 json!({ "id": id, "username": username, "uuid": uuid }),
             );
         }
-        Some("auth_error") => {
-            let _ = app.emit("auth:error", s("message"));
+        Err(e) => {
+            let _ = app.emit("auth:error", e.to_string());
         }
-        Some("status") => {
-            let id = s("id");
-            let status = s("status");
-            let connected_at = v.get("connected_at").and_then(|x| x.as_i64());
-            let attempt = v.get("attempt").and_then(|x| x.as_i64());
-            statuses.lock().unwrap().insert(
-                id.clone(),
-                StatusInfo {
-                    status: status.clone(),
-                    connected_at,
-                },
-            );
-            let _ = app.emit(
-                "bot:status",
-                json!({ "id": id, "status": status, "connected_at": connected_at, "error": s("error"), "error_key": s("error_key"), "attempt": attempt }),
-            );
-            crate::update_tray(app);
-        }
-        Some("metrics") => {
-            let _ = app.emit(
-                "bot:metrics",
-                json!({
-                    "id": s("id"),
-                    "cpu": v.get("cpu").and_then(|x| x.as_f64()).unwrap_or(0.0),
-                    "mem_mb": v.get("mem_mb").and_then(|x| x.as_f64()).unwrap_or(0.0),
-                }),
-            );
-        }
-        _ => {}
     }
+}
+
+/// Update the shared status map, push a `bot:status` event, and refresh the tray.
+fn emit_status(
+    app: &AppHandle,
+    statuses: &Statuses,
+    id: &str,
+    status: &str,
+    connected_at: Option<i64>,
+    error: Option<&str>,
+    error_key: Option<&str>,
+    attempt: Option<i64>,
+) {
+    statuses.lock().unwrap().insert(
+        id.to_string(),
+        StatusInfo {
+            status: status.to_string(),
+            connected_at,
+        },
+    );
+    let _ = app.emit(
+        "bot:status",
+        json!({
+            "id": id,
+            "status": status,
+            "connected_at": connected_at,
+            "error": error.unwrap_or(""),
+            "error_key": error_key.unwrap_or(""),
+            "attempt": attempt,
+        }),
+    );
+    crate::update_tray(app);
+}
+
+/// Sample whole-process CPU/RAM every 2s and emit it as `app:metrics`.
+fn spawn_metrics(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        use sysinfo::{get_current_pid, ProcessesToUpdate, System};
+        let pid = match get_current_pid() {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        let mut sys = System::new();
+        let mut tick = interval(Duration::from_secs(2));
+        loop {
+            tick.tick().await;
+            sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
+            if let Some(proc) = sys.process(pid) {
+                let cpu = (proc.cpu_usage() as f64 * 10.0).round() / 10.0;
+                let mem_mb = (proc.memory() as f64 / 1_048_576.0).round();
+                let _ = app.emit("app:metrics", json!({ "cpu": cpu, "mem_mb": mem_mb }));
+            }
+        }
+    });
+}
+
+/// Strip a leading scheme (e.g. `tcp://`) so azalea can resolve `host[:port]`.
+fn clean_address(a: &str) -> String {
+    let a = a.trim();
+    match a.find("://") {
+        Some(i) => a[i + 3..].to_string(),
+        None => a.to_string(),
+    }
+}
+
+/// Reconnect backoff: 5, 10, 20, 40, 60… seconds (capped at 60s).
+fn backoff_delay(attempts: u32) -> Duration {
+    let exp = attempts.saturating_sub(1).min(4);
+    let ms = (5000u64 * 2u64.pow(exp)).min(60_000);
+    Duration::from_millis(ms)
+}
+
+/// Sleep for `dur`, returning early with `true` if the bot was asked to stop.
+async fn wait_with_stop(stop: &Notify, dur: Duration) -> bool {
+    tokio::select! {
+        _ = sleep(dur) => false,
+        _ = stop.notified() => true,
+    }
+}
+
+fn now_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }

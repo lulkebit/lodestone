@@ -47,14 +47,7 @@ _Supported Minecraft version: `1.21.11`._
 
 Grab the latest version for your operating system from the
 [**Releases page**](https://github.com/lulkebit/lodestone/releases), then install
-and open it.
-
-> [!IMPORTANT]
-> lodestone needs **[Node.js](https://nodejs.org)** installed on your computer.
-> It powers the connection engine behind the scenes, so install it once and
-> you're set. lodestone looks for Node in the usual places (including Homebrew
-> and nvm). If it still cannot find it, set the `LODESTONE_NODE` environment
-> variable to the full path of your `node` binary.
+and open it. There's nothing else to install: the connection engine is built in.
 
 ### Use it
 
@@ -103,8 +96,12 @@ npm install        # install dependencies
 npm run tauri dev  # build and launch the app
 ```
 
-You'll need [Node.js](https://nodejs.org) and [Rust](https://rustup.rs) along
-with the usual [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+You'll need [Node.js](https://nodejs.org) (only for the Tauri CLI tooling) and
+[Rust](https://rustup.rs) along with the usual
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). The bot engine
+([azalea](https://github.com/azalea-rs/azalea)) needs nightly Rust; the pinned
+`rust-toolchain.toml` selects it automatically, so rustup installs it on first
+build.
 
 Cutting a release (maintainers): bump the version with `npm run release -- patch`
 (or `minor` / `major`), fill in the [changelog](CHANGELOG.md), then commit and
@@ -114,10 +111,11 @@ release for every platform.
 ## How it works
 
 lodestone is a small [Tauri](https://v2.tauri.app) desktop app. The interface
-and account management are native and lightweight. The actual Minecraft
-connections run as background processes powered by
-[mineflayer](https://github.com/PrismarineJS/mineflayer), which gives each bot
-its own isolated process and therefore accurate per-account resource numbers.
+and account management are native and lightweight. The Minecraft connections are
+handled in-process by [azalea](https://github.com/azalea-rs/azalea), a pure-Rust
+headless client, so there is no Node.js runtime or game client to install. All
+bots share the one app process, and the resource readout shows the app's total
+CPU and memory.
 
 ## License
 

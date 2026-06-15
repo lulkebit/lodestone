@@ -1,0 +1,9 @@
+# azalea (the headless Minecraft engine) relies on nightly-only features
+# (portable_simd via simdnbt), so the whole crate is built with nightly Rust.
+#
+# Pinned to a nightly from around azalea 0.15.1's release (2026-02). azalea's
+# dependency tree pins several pre-release crypto crates (rsa, crypto-bigint),
+# and newer nightlies stopped compiling them, so we pin the toolchain too. Bump
+# this together with azalea.
+[toolchain]
+channel = "nightly-2026-02-15"

@@ -1,9 +1,9 @@
 [package]
 name = "lodestone"
-version = "0.3.0"
+version = "0.4.0"
 description = "Headless Minecraft AFK Manager"
-authors = ["you"]
-edition = "2021"
+authors = ["Luke Schröter"]
+edition = "2026"
 license = "MIT"
 
 [lib]
@@ -22,6 +22,27 @@ tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["process", "io-util", "sync", "macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["sync", "macros", "rt", "rt-multi-thread", "time"] }
 uuid = { version = "1", features = ["v4"] }
 anyhow = "1"
+
+# Headless Minecraft engine (replaces the Node/mineflayer sidecar). Pinned to the
+# 0.15 line, which targets Minecraft 1.21.11. azalea bakes the protocol version
+# into the crate, so bumping the supported MC version means bumping azalea.
+azalea = "0.15"
+azalea-auth = { version = "0.15", features = ["online-mode"] }
+# Must match the reqwest version azalea-auth uses (0.13) so the `reqwest::Client`
+# we hand to its auth functions is the same type. TLS features come from azalea.
+reqwest = { version = "0.13", default-features = false }
+# Whole-process CPU/RAM for the live resource readout (bots share one process now).
+# Pinned below 0.39, whose MSRV (1.95) is newer than the project toolchain.
+sysinfo = "0.38"
+
+# azalea 0.15's `rsa` (a pre-release) depends on the pre-release der/pkcs8/spki
+# crates with loose `^0.x.0-rc` requirements. Their now-published "final"
+# releases satisfy those requirements, so Cargo greedily picks them, but they
+# changed APIs and break rsa's source. We pin them to the last pre-final
+# versions that actually compile together. Bump these in lockstep with azalea.
+der = "=0.8.0-rc.10"
+pkcs8 = "=0.11.0-rc.9"
+spki = "=0.8.0-rc.4"

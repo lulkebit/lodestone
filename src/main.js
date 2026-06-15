@@ -54,12 +54,10 @@ function render() {
   updateOverall();
 }
 
-// Sub-line under the account name: live metrics while connected, else uuid/error.
+// Sub-line under the account name: running state while connected, else uuid/error.
 function subText(acc) {
   if (acc.status === "connected") {
-    return acc.cpu != null
-      ? t("account.metrics", { cpu: acc.cpu, mem: acc.mem })
-      : t("account.running");
+    return t("account.running");
   }
   if (acc.status === "error") {
     if (acc.errorKey) return t(acc.errorKey);
@@ -68,20 +66,11 @@ function subText(acc) {
   return acc.uuid || "";
 }
 
-// Overall = sum across currently-connected bots.
+// Online bot count. CPU/RAM are whole-process totals pushed via `app:metrics`,
+// since the bots now share one process and can't be measured individually.
 function updateOverall() {
-  let cpu = 0;
-  let mem = 0;
   let n = 0;
-  for (const a of accounts) {
-    if (a.status === "connected" && a.cpu != null) {
-      cpu += a.cpu;
-      mem += a.mem;
-      n++;
-    }
-  }
-  overallCpuEl.innerHTML = `${cpu.toFixed(1)}&nbsp;%`;
-  overallMemEl.innerHTML = `${Math.round(mem)}&nbsp;MB`;
+  for (const a of accounts) if (a.status === "connected") n++;
   overallBotsEl.textContent = String(n);
 }
 
@@ -458,17 +447,11 @@ listen("bot:status", (e) => {
   }
 });
 
-listen("bot:metrics", (e) => {
-  const { id, cpu, mem_mb } = e.payload;
-  const acc = accounts.find((a) => a.id === id);
-  if (!acc) return;
-  acc.cpu = cpu;
-  acc.mem = mem_mb;
-  if (acc.status === "connected") {
-    const row = listEl.querySelector(`.account-row[data-id="${id}"]`);
-    if (row) row.querySelector(".account-sub").textContent = subText(acc);
-  }
-  updateOverall();
+// Whole-process resource usage (all bots + the app), sampled in the backend.
+listen("app:metrics", (e) => {
+  const { cpu, mem_mb } = e.payload;
+  overallCpuEl.innerHTML = `${Number(cpu).toFixed(1)}&nbsp;%`;
+  overallMemEl.innerHTML = `${Math.round(mem_mb)}&nbsp;MB`;
 });
 
 // ---------- Version, updates & changelog ----------

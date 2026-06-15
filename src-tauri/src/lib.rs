@@ -19,6 +19,8 @@ pub struct AppState {
     store: Arc<Store>,
     engine: Arc<Engine>,
     statuses: Arc<Mutex<HashMap<String, StatusInfo>>>,
+    /// Where each account's azalea auth-token cache lives (`<id>.json`).
+    cache_dir: PathBuf,
 }
 
 /// Holds the tray's status menu item so we can update its text as bots connect.
@@ -138,7 +140,7 @@ fn set_all_selected(state: State<AppState>, selected: bool) {
 #[tauri::command]
 async fn add_account(state: State<'_, AppState>) -> Result<(), String> {
     let id = Uuid::new_v4().to_string();
-    state.engine.start_login(id).await;
+    state.engine.start_login(id);
     Ok(())
 }
 
@@ -156,6 +158,8 @@ async fn remove_account(state: State<'_, AppState>, id: String) -> Result<(), St
         cfg.accounts.retain(|a| a.id != id);
     }
     state.statuses.lock().unwrap().remove(&id);
+    // Drop the account's cached sign-in tokens too.
+    let _ = std::fs::remove_file(state.cache_dir.join(format!("{id}.json")));
     state.store.save();
     Ok(())
 }
@@ -172,7 +176,7 @@ async fn start_account(state: State<'_, AppState>, id: String) -> Result<(), Str
     if address.trim().is_empty() {
         return Err("error.noServer".into());
     }
-    state.engine.start_bot(id, address).await;
+    state.engine.start_bot(id, address);
     Ok(())
 }
 
@@ -200,7 +204,7 @@ async fn start_selected_internal(app: &AppHandle) -> Result<(), String> {
         return Err("error.noServer".into());
     }
     for id in ids {
-        state.engine.start_bot(id, address.clone()).await;
+        state.engine.start_bot(id, address.clone());
     }
     Ok(())
 }
@@ -223,20 +227,6 @@ fn open_url(app: AppHandle, url: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// In a bundled app the sidecar ships as a resource; in dev it lives next to
-/// the crate. Prefer the resource, fall back to the source tree.
-fn resolve_sidecar_dir(app: &AppHandle) -> PathBuf {
-    if let Ok(res) = app.path().resource_dir() {
-        let p = res.join("sidecar");
-        if p.join("bot-worker.mjs").exists() {
-            return p;
-        }
-    }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("sidecar")
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -254,20 +244,18 @@ pub fn run() {
 
             let store = Arc::new(Store::load(dir.join("config.json")));
             let statuses = Arc::new(Mutex::new(HashMap::new()));
-            let sidecar = resolve_sidecar_dir(&handle);
             let engine = Engine::new(
                 handle.clone(),
                 store.clone(),
                 statuses.clone(),
-                sidecar.join("login.mjs"),
-                sidecar.join("bot-worker.mjs"),
-                cache_dir,
+                cache_dir.clone(),
             );
 
             app.manage(AppState {
                 store,
                 engine,
                 statuses,
+                cache_dir,
             });
 
             // --- System tray: keep bots reachable while the window is hidden ---
