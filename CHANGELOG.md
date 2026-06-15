@@ -8,6 +8,31 @@ und das Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 Die Einträge der jeweils installierten Version werden nach einem Update
 automatisch in der App unter „Was ist neu" angezeigt.
 
+## [1.0.0] - 2026-06-15
+
+### Security
+
+- **Sign-in tokens now live in your operating system's keychain** (the macOS
+  Keychain, the Windows Credential Manager, or the Linux Secret Service) instead
+  of a plaintext file. Tokens saved by older versions are migrated into the
+  keychain automatically the first time an account is used. If no keychain is
+  reachable, lodestone falls back to a file with owner-only permissions, so it
+  keeps working on headless setups.
+
+### Added
+
+- **Avatars can be turned off.** A new setting controls whether Minecraft head
+  avatars are loaded at all. With them on, each head is fetched once and cached
+  locally, so the list works offline afterwards and a UUID leaves your machine at
+  most once. With them off, nothing is requested from any third party.
+
+### Changed
+
+- Internal state locking was hardened so a single unexpected error can no longer
+  cascade and bring the whole app down.
+- The app version now has a single source of truth, removing the version drift
+  that could publish a build under the wrong number.
+
 ## [0.4.1] - 2026-06-15
 
 ### Changed

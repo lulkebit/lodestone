@@ -10,8 +10,7 @@
 //! account; a small task samples the whole process instead (`app:metrics`).
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use azalea::prelude::*;
@@ -20,12 +19,14 @@ use azalea_auth::{
     get_minecraft_token, get_ms_auth_token, get_ms_link_code, get_profile, refresh_ms_auth_token,
     AccessTokenResponse, ProfileResponse,
 };
+use parking_lot::Mutex;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Notify;
 use tokio::time::{interval, sleep};
 
+use crate::secrets::SecretStore;
 use crate::store::{Account as StoredAccount, Store};
 
 /// Live (non-persisted) connection state for an account, keyed by account id.
@@ -63,7 +64,7 @@ impl Engine {
         app: AppHandle,
         store: Arc<Store>,
         statuses: Statuses,
-        cache_dir: PathBuf,
+        secrets: Arc<SecretStore>,
     ) -> Arc<Engine> {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         spawn_metrics(app.clone());
@@ -81,7 +82,7 @@ impl Engine {
                 let local = tokio::task::LocalSet::new();
                 local.block_on(
                     &rt,
-                    manager(app, store, statuses, cache_dir, tx_for_thread, cmd_rx),
+                    manager(app, store, statuses, secrets, tx_for_thread, cmd_rx),
                 );
             })
             .expect("spawn minecraft thread");
@@ -121,7 +122,7 @@ async fn manager(
     app: AppHandle,
     store: Arc<Store>,
     statuses: Statuses,
-    cache_dir: PathBuf,
+    secrets: Arc<SecretStore>,
     cmd_tx: UnboundedSender<Cmd>,
     mut cmd_rx: UnboundedReceiver<Cmd>,
 ) {
@@ -138,7 +139,7 @@ async fn manager(
                 next_token += 1;
                 let token = next_token;
                 let stop = Arc::new(Notify::new());
-                let cache_file = cache_dir.join(format!("{id}.json"));
+                let secrets2 = secrets.clone();
                 let (app2, statuses2, stop2, tx2, id2) = (
                     app.clone(),
                     statuses.clone(),
@@ -147,7 +148,7 @@ async fn manager(
                     id.clone(),
                 );
                 tokio::task::spawn_local(async move {
-                    run_bot(&app2, &statuses2, &id2, &address, &cache_file, &stop2).await;
+                    run_bot(&app2, &statuses2, &id2, &address, &secrets2, &stop2).await;
                     let _ = tx2.send(Cmd::BotExited { id: id2, token });
                 });
                 bots.insert(id, BotHandle { stop, token });
@@ -172,10 +173,10 @@ async fn manager(
                 if let Some(h) = login.take() {
                     h.abort();
                 }
-                let cache_file = cache_dir.join(format!("{id}.json"));
+                let secrets2 = secrets.clone();
                 let (app2, store2) = (app.clone(), store.clone());
                 login = Some(tokio::task::spawn_local(async move {
-                    run_login(&app2, &store2, &id, &cache_file).await;
+                    run_login(&app2, &store2, &secrets2, &id).await;
                 }));
             }
             Cmd::CancelLogin => {
@@ -201,7 +202,7 @@ async fn run_bot(
     statuses: &Statuses,
     id: &str,
     address: &str,
-    cache_file: &PathBuf,
+    secrets: &SecretStore,
     stop: &Notify,
 ) {
     let http = reqwest::Client::new();
@@ -226,7 +227,7 @@ async fn run_bot(
         // 1. Authenticate (refresh the token or show a re-auth dialog as needed)
         //    and build the account azalea will connect with.
         let account = tokio::select! {
-            r = ensure_account(&http, cache_file, id, app) => r,
+            r = ensure_account(&http, secrets, id, app) => r,
             _ = stop.notified() => return,
         };
         let account = match account {
@@ -356,30 +357,29 @@ fn give_up(
 
 /// We cache only the Microsoft refresh token (an `ExpiringValue`). azalea turns
 /// it into a Minecraft session and refreshes it as needed; persisting it lets
-/// the bot reconnect across restarts without a fresh login.
+/// the bot reconnect across restarts without a fresh login. The token lives in
+/// the OS keychain via [`SecretStore`], not in a plaintext file.
 type CachedMsa = ExpiringValue<AccessTokenResponse>;
 
-fn load_msa(cache_file: &Path) -> Option<CachedMsa> {
-    let data = std::fs::read(cache_file).ok()?;
-    serde_json::from_slice(&data).ok()
+fn load_msa(secrets: &SecretStore, id: &str) -> Option<CachedMsa> {
+    serde_json::from_str(&secrets.load(id)?).ok()
 }
 
-fn save_msa(cache_file: &Path, msa: &CachedMsa) -> anyhow::Result<()> {
-    std::fs::write(cache_file, serde_json::to_vec_pretty(msa)?)?;
-    Ok(())
+fn save_msa(secrets: &SecretStore, id: &str, msa: &CachedMsa) -> anyhow::Result<()> {
+    secrets.save(id, &serde_json::to_string(msa)?)
 }
 
 /// Resolve a connectable [`Account`] for `id`: load the cached Microsoft token,
 /// refresh it if expired, or (as a last resort) prompt a re-login in the UI.
 async fn ensure_account(
     http: &reqwest::Client,
-    cache_file: &Path,
+    secrets: &SecretStore,
     id: &str,
     app: &AppHandle,
 ) -> anyhow::Result<Account> {
-    let mut msa = match load_msa(cache_file) {
+    let mut msa = match load_msa(secrets, id) {
         Some(m) => m,
-        None => interactive_login(http, cache_file, id, app, true).await?,
+        None => interactive_login(http, secrets, id, app, true).await?,
     };
 
     // Refresh ourselves (rather than letting azalea do it) so we can persist the
@@ -387,10 +387,10 @@ async fn ensure_account(
     if msa.is_expired() {
         msa = match refresh_ms_auth_token(http, &msa.data.refresh_token, None, None).await {
             Ok(m) => {
-                save_msa(cache_file, &m)?;
+                save_msa(secrets, id, &m)?;
                 m
             }
-            Err(_) => interactive_login(http, cache_file, id, app, true).await?,
+            Err(_) => interactive_login(http, secrets, id, app, true).await?,
         };
     }
 
@@ -402,7 +402,7 @@ async fn ensure_account(
 /// Returns the freshly obtained token.
 async fn interactive_login(
     http: &reqwest::Client,
-    cache_file: &Path,
+    secrets: &SecretStore,
     id: &str,
     app: &AppHandle,
     reauth: bool,
@@ -423,7 +423,7 @@ async fn interactive_login(
         crate::show_main(app);
     }
     let msa = get_ms_auth_token(http, code, None).await?;
-    save_msa(cache_file, &msa)?;
+    save_msa(secrets, id, &msa)?;
     Ok(msa)
 }
 
@@ -434,10 +434,10 @@ async fn fetch_profile(http: &reqwest::Client, msa: &CachedMsa) -> anyhow::Resul
 }
 
 /// Handle "add account": log in interactively, then persist the new account.
-async fn run_login(app: &AppHandle, store: &Arc<Store>, id: &str, cache_file: &Path) {
+async fn run_login(app: &AppHandle, store: &Arc<Store>, secrets: &SecretStore, id: &str) {
     let http = reqwest::Client::new();
     let result = async {
-        let msa = interactive_login(&http, cache_file, id, app, false).await?;
+        let msa = interactive_login(&http, secrets, id, app, false).await?;
         fetch_profile(&http, &msa).await
     }
     .await;
@@ -446,7 +446,7 @@ async fn run_login(app: &AppHandle, store: &Arc<Store>, id: &str, cache_file: &P
             let uuid = profile.id.simple().to_string();
             let username = profile.name.clone();
             {
-                let mut cfg = store.config.lock().unwrap();
+                let mut cfg = store.config.lock();
                 if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.uuid == uuid) {
                     acc.id = id.to_string();
                     acc.username = username.clone();
@@ -482,7 +482,7 @@ fn emit_status(
     error_key: Option<&str>,
     attempt: Option<i64>,
 ) {
-    statuses.lock().unwrap().insert(
+    statuses.lock().insert(
         id.to_string(),
         StatusInfo {
             status: status.to_string(),

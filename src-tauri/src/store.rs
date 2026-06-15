@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 /// A single Microsoft/Minecraft account. `id` doubles as the prismarine-auth
 /// cache key, so the bot can reuse the cached token without re-prompting.
@@ -13,7 +13,7 @@ pub struct Account {
     pub selected: bool,
 }
 
-#[derive(Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub server_address: String,
@@ -28,6 +28,27 @@ pub struct Config {
     /// fresh install (no changelog is shown for a first run).
     #[serde(default)]
     pub last_seen_version: Option<String>,
+    /// Whether to load (and locally cache) Minecraft head avatars from
+    /// mc-heads.net. Turning it off keeps every UUID on this machine. Defaults
+    /// to on, including for configs written before this field existed.
+    #[serde(default = "default_true")]
+    pub show_avatars: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            server_address: String::new(),
+            accounts: Vec::new(),
+            language: None,
+            last_seen_version: None,
+            show_avatars: true,
+        }
+    }
 }
 
 /// Persists the account list + server address as JSON in the app config dir.
@@ -49,7 +70,7 @@ impl Store {
     }
 
     pub fn save(&self) {
-        let cfg = self.config.lock().unwrap();
+        let cfg = self.config.lock();
         if let Ok(json) = serde_json::to_string_pretty(&*cfg) {
             let _ = std::fs::write(&self.path, json);
         }

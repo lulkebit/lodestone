@@ -25,6 +25,11 @@ serde_json = "1"
 tokio = { version = "1", features = ["sync", "macros", "rt", "rt-multi-thread", "time"] }
 uuid = { version = "1", features = ["v4"] }
 anyhow = "1"
+# UI/engine state locks that don't poison on a panic, so one bad code path can't
+# cascade into every later `.lock()` and take the whole app down.
+parking_lot = "0.12"
+# data: URL encoding for the locally cached skin-head avatars.
+base64 = "0.22"
 
 # Headless Minecraft engine (replaces the Node/mineflayer sidecar). Pinned to the
 # 0.15 line, which targets Minecraft 1.21.11. azalea bakes the protocol version
@@ -46,3 +51,16 @@ sysinfo = "0.38"
 der = "=0.8.0-rc.10"
 pkcs8 = "=0.11.0-rc.9"
 spki = "=0.8.0-rc.4"
+
+# Each account's Microsoft refresh token lives in the OS credential store rather
+# than a plaintext file. Backends are platform-native; Linux talks to the
+# freedesktop Secret Service (GNOME Keyring / KWallet). When no store is reachable
+# the engine falls back to an owner-only file (see `secrets.rs`).
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }

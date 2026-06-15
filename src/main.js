@@ -8,6 +8,8 @@ const t = i18n.t;
 let accounts = []; // {id,label,username,uuid,selected,status,connectedAt,error}
 let serverAddress = "";
 let reauthId = null; // account id currently re-authenticating (expired session)
+let showAvatars = true; // load skin-head avatars (cached locally) — see settings
+const avatarCache = new Map(); // uuid -> data: URL, so re-renders don't re-fetch
 
 // ---------- DOM ----------
 const $ = (sel) => document.querySelector(sel);
@@ -87,17 +89,8 @@ function buildRow(acc) {
   select.checked = acc.selected;
   select.addEventListener("change", () => toggleSelected(acc.id, select.checked));
 
-  // Minecraft head avatar by UUID; falls back to a neutral block when offline.
-  const avatar = node.querySelector(".account-avatar");
-  if (acc.uuid) {
-    avatar.src = `https://mc-heads.net/avatar/${encodeURIComponent(acc.uuid)}/64`;
-    avatar.onerror = () => {
-      avatar.removeAttribute("src");
-      avatar.classList.add("is-fallback");
-    };
-  } else {
-    avatar.classList.add("is-fallback");
-  }
+  // Minecraft head avatar by UUID; falls back to a neutral block.
+  setAvatar(node.querySelector(".account-avatar"), acc.uuid);
 
   node.querySelector(".account-name").textContent = acc.username || acc.label;
   node.querySelector(".account-sub").textContent = subText(acc);
@@ -127,6 +120,33 @@ function buildRow(acc) {
   removeBtn.addEventListener("click", () => removeAccount(acc.id));
 
   return node;
+}
+
+// Show a Minecraft head for `uuid`. The backend fetches it from mc-heads.net
+// once and caches the PNG on disk (and we cache the data URL here), so it works
+// offline afterwards and each UUID leaves this machine at most once. When the
+// user turns avatars off, nothing is requested and we show a neutral block.
+function setAvatar(img, uuid) {
+  if (!uuid || !showAvatars) {
+    img.removeAttribute("src");
+    img.classList.add("is-fallback");
+    return;
+  }
+  const cached = avatarCache.get(uuid);
+  if (cached) {
+    img.src = cached;
+    return;
+  }
+  invoke("get_avatar", { uuid })
+    .then((dataUrl) => {
+      avatarCache.set(uuid, dataUrl);
+      // The row may have been rebuilt since; only apply to the live node.
+      if (img.isConnected) img.src = dataUrl;
+    })
+    .catch(() => {
+      img.removeAttribute("src");
+      img.classList.add("is-fallback");
+    });
 }
 
 function formatUptime(connectedAt) {
@@ -171,6 +191,7 @@ async function loadState(state) {
   }));
   serverAddress = state.server_address || "";
   serverInput.value = serverAddress;
+  showAvatars = state.show_avatars !== false;
   render();
 }
 
@@ -620,6 +641,7 @@ listen("update:downloaded", () => {
 // ---------- Settings ----------
 const settingsModal = $("#settings-modal");
 const languageSelect = $("#language-select");
+const avatarsToggle = $("#avatars-toggle");
 const settingsVersion = $("#settings-version");
 const updateCheckStatus = $("#update-check-status");
 const checkUpdateBtn = $("#check-update-btn");
@@ -648,9 +670,16 @@ async function applyLanguage(code) {
 
 $("#settings-btn").addEventListener("click", () => {
   populateLanguages();
+  avatarsToggle.checked = showAvatars;
   updateCheckStatus.textContent = "";
   updateCheckStatus.classList.remove("error");
   settingsModal.hidden = false;
+});
+
+avatarsToggle.addEventListener("change", () => {
+  showAvatars = avatarsToggle.checked;
+  render();
+  invoke("set_show_avatars", { enabled: showAvatars }).catch(() => {});
 });
 
 $("#settings-close-btn").addEventListener("click", () => {

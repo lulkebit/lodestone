@@ -69,6 +69,8 @@
   "settings.open": "Einstellungen",
   "settings.language": "Sprache",
   "settings.language.sub": "Sprache der Oberfläche",
+  "settings.avatars": "Avatare anzeigen",
+  "settings.avatars.sub": "Skin-Köpfe von mc-heads.net laden und lokal zwischenspeichern",
   "settings.updates": "Updates",
   "settings.checkUpdates": "Nach Updates suchen",
   "settings.checking": "Suche …",

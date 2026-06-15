@@ -69,6 +69,8 @@
   "settings.open": "Settings",
   "settings.language": "Language",
   "settings.language.sub": "Interface language",
+  "settings.avatars": "Show avatars",
+  "settings.avatars.sub": "Load skin heads from mc-heads.net and cache them locally",
   "settings.updates": "Updates",
   "settings.checkUpdates": "Check for updates",
   "settings.checking": "Checking …",

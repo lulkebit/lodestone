@@ -6,9 +6,11 @@
 //   npm run release -- major        # 0.2.0 -> 1.0.0
 //   npm run release -- 1.4.2        # explicit version
 //
-// Keeps package.json, src-tauri/tauri.conf.json and src-tauri/Cargo.toml in
-// sync, then ensures CHANGELOG.md has a dated section to fill in. Pushing the
-// resulting `v<version>` tag triggers the GitHub release build.
+// src-tauri/Cargo.toml is the single source of truth for the version: the
+// running app reads it via package_info() and tauri.conf.json inherits it (it
+// has no version field). package.json is kept in sync only for the npm/Tauri
+// CLI tooling. Also ensures CHANGELOG.md has a dated section to fill in. Pushing
+// the resulting `v<version>` tag triggers the GitHub release build.
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -20,13 +22,18 @@ if (!arg) {
   process.exit(1);
 }
 
-const pkgPath = join(root, "package.json");
-const confPath = join(root, "src-tauri", "tauri.conf.json");
 const cargoPath = join(root, "src-tauri", "Cargo.toml");
+const pkgPath = join(root, "package.json");
 const changelogPath = join(root, "CHANGELOG.md");
 
-const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-const current = pkg.version;
+// Read the current version from the source of truth.
+let cargo = readFileSync(cargoPath, "utf8");
+const cargoMatch = cargo.match(/\[package\][\s\S]*?\nversion\s*=\s*"([^"]*)"/);
+if (!cargoMatch) {
+  console.error("Konnte die Version in src-tauri/Cargo.toml nicht finden.");
+  process.exit(1);
+}
+const current = cargoMatch[1];
 
 function bump(v, kind) {
   const [a, b, c] = v.split(".").map(Number);
@@ -45,22 +52,17 @@ if (!next) {
   next = arg;
 }
 
-// package.json
-pkg.version = next;
-writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
-
-// tauri.conf.json (JSON.stringify keeps key order)
-const conf = JSON.parse(readFileSync(confPath, "utf8"));
-conf.version = next;
-writeFileSync(confPath, JSON.stringify(conf, null, 2) + "\n");
-
 // Cargo.toml — only the version inside [package]
-let cargo = readFileSync(cargoPath, "utf8");
 cargo = cargo.replace(
   /(\[package\][\s\S]*?\nversion\s*=\s*")[^"]*(")/,
   `$1${next}$2`
 );
 writeFileSync(cargoPath, cargo);
+
+// package.json — kept in sync for npm / the Tauri CLI
+const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+pkg.version = next;
+writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
 
 // CHANGELOG.md — add a dated section for `next` if it isn't there yet
 let cl = readFileSync(changelogPath, "utf8");
@@ -76,7 +78,7 @@ if (!cl.includes(`## [${next}]`)) {
 }
 
 console.log(`\n  ${current} → ${next}\n`);
-console.log("Aktualisiert: package.json, tauri.conf.json, Cargo.toml, CHANGELOG.md\n");
+console.log("Aktualisiert: Cargo.toml, package.json, CHANGELOG.md\n");
 console.log("Nächste Schritte:");
 console.log(`  1. CHANGELOG.md für ${next} ausformulieren`);
 console.log(`  2. git add -A && git commit -m "Release v${next}"`);

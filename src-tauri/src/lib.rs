@@ -1,12 +1,16 @@
 mod engine;
+mod secrets;
 mod store;
 mod updater;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use base64::Engine as _;
 use engine::{Engine, StatusInfo};
+use parking_lot::Mutex;
+use secrets::SecretStore;
 use serde::Serialize;
 use store::Store;
 use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
@@ -19,8 +23,11 @@ pub struct AppState {
     store: Arc<Store>,
     engine: Arc<Engine>,
     statuses: Arc<Mutex<HashMap<String, StatusInfo>>>,
-    /// Where each account's azalea auth-token cache lives (`<id>.json`).
-    cache_dir: PathBuf,
+    /// Secure storage for each account's Microsoft refresh token (OS keychain,
+    /// with an owner-only file fallback).
+    secrets: Arc<SecretStore>,
+    /// Where locally cached skin-head avatars live (`<uuid>.png`).
+    avatar_dir: PathBuf,
 }
 
 /// Holds the tray's status menu item so we can update its text as bots connect.
@@ -41,13 +48,13 @@ pub fn show_main(app: &AppHandle) {
 pub fn update_tray(app: &AppHandle) {
     let online = {
         let st = app.state::<AppState>();
-        let statuses = st.statuses.lock().unwrap();
+        let statuses = st.statuses.lock();
         statuses.values().filter(|s| s.status == "connected").count()
     };
     let label = format!("{online} online");
     if let Some(item) = app
         .try_state::<TrayState>()
-        .and_then(|ts| ts.status_item.lock().unwrap().clone())
+        .and_then(|ts| ts.status_item.lock().clone())
     {
         let _ = item.set_text(&label);
     }
@@ -71,12 +78,13 @@ struct StateView {
     server_address: String,
     accounts: Vec<AccountView>,
     language: Option<String>,
+    show_avatars: bool,
 }
 
 #[tauri::command]
 fn get_state(state: State<AppState>) -> StateView {
-    let cfg = state.store.config.lock().unwrap();
-    let statuses = state.statuses.lock().unwrap();
+    let cfg = state.store.config.lock();
+    let statuses = state.statuses.lock();
     let accounts = cfg
         .accounts
         .iter()
@@ -98,19 +106,58 @@ fn get_state(state: State<AppState>) -> StateView {
         server_address: cfg.server_address.clone(),
         accounts,
         language: cfg.language.clone(),
+        show_avatars: cfg.show_avatars,
     }
 }
 
 #[tauri::command]
 fn set_language(state: State<AppState>, language: String) {
-    state.store.config.lock().unwrap().language = Some(language);
+    state.store.config.lock().language = Some(language);
     state.store.save();
 }
 
 #[tauri::command]
 fn set_server(state: State<AppState>, address: String) {
-    state.store.config.lock().unwrap().server_address = address;
+    state.store.config.lock().server_address = address;
     state.store.save();
+}
+
+#[tauri::command]
+fn set_show_avatars(state: State<AppState>, enabled: bool) {
+    state.store.config.lock().show_avatars = enabled;
+    state.store.save();
+}
+
+/// Return a Minecraft head for `uuid` as a `data:` URL. The PNG is fetched from
+/// mc-heads.net once and cached on disk, so each UUID leaves this machine at
+/// most once and avatars keep working offline afterwards.
+#[tauri::command]
+async fn get_avatar(state: State<'_, AppState>, uuid: String) -> Result<String, String> {
+    let dir = state.avatar_dir.clone();
+    fetch_avatar(dir, uuid).await.map_err(|e| e.to_string())
+}
+
+async fn fetch_avatar(dir: PathBuf, uuid: String) -> anyhow::Result<String> {
+    // UUIDs are hex; refuse anything else so it can't escape the cache dir.
+    let safe: String = uuid.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    if safe.is_empty() {
+        anyhow::bail!("invalid uuid");
+    }
+    let file = dir.join(format!("{safe}.png"));
+    let bytes = match std::fs::read(&file) {
+        Ok(b) if !b.is_empty() => b,
+        _ => {
+            let url = format!("https://mc-heads.net/avatar/{safe}/64");
+            let bytes = reqwest::get(&url).await?.error_for_status()?.bytes().await?;
+            std::fs::create_dir_all(&dir).ok();
+            let _ = std::fs::write(&file, &bytes);
+            bytes.to_vec()
+        }
+    };
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(&bytes)
+    ))
 }
 
 #[tauri::command]
@@ -119,7 +166,6 @@ fn set_selected(state: State<AppState>, id: String, selected: bool) {
         .store
         .config
         .lock()
-        .unwrap()
         .accounts
         .iter_mut()
         .find(|a| a.id == id)
@@ -131,7 +177,7 @@ fn set_selected(state: State<AppState>, id: String, selected: bool) {
 
 #[tauri::command]
 fn set_all_selected(state: State<AppState>, selected: bool) {
-    for a in state.store.config.lock().unwrap().accounts.iter_mut() {
+    for a in state.store.config.lock().accounts.iter_mut() {
         a.selected = selected;
     }
     state.store.save();
@@ -153,13 +199,22 @@ async fn cancel_add_account(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 async fn remove_account(state: State<'_, AppState>, id: String) -> Result<(), String> {
     state.engine.stop_bot(&id);
-    {
-        let mut cfg = state.store.config.lock().unwrap();
+    let uuid = {
+        let mut cfg = state.store.config.lock();
+        let uuid = cfg.accounts.iter().find(|a| a.id == id).map(|a| a.uuid.clone());
         cfg.accounts.retain(|a| a.id != id);
+        uuid
+    };
+    state.statuses.lock().remove(&id);
+    // Drop the account's cached sign-in token (keychain + any fallback file).
+    state.secrets.delete(&id);
+    // ...and its locally cached avatar.
+    if let Some(uuid) = uuid {
+        let safe: String = uuid.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        if !safe.is_empty() {
+            let _ = std::fs::remove_file(state.avatar_dir.join(format!("{safe}.png")));
+        }
     }
-    state.statuses.lock().unwrap().remove(&id);
-    // Drop the account's cached sign-in tokens too.
-    let _ = std::fs::remove_file(state.cache_dir.join(format!("{id}.json")));
     state.store.save();
     Ok(())
 }
@@ -167,7 +222,7 @@ async fn remove_account(state: State<'_, AppState>, id: String) -> Result<(), St
 #[tauri::command]
 async fn start_account(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let address = {
-        let cfg = state.store.config.lock().unwrap();
+        let cfg = state.store.config.lock();
         if !cfg.accounts.iter().any(|a| a.id == id) {
             return Err("error.accountNotFound".into());
         }
@@ -191,7 +246,7 @@ async fn stop_account(state: State<'_, AppState>, id: String) -> Result<(), Stri
 async fn start_selected_internal(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
     let (address, ids) = {
-        let cfg = state.store.config.lock().unwrap();
+        let cfg = state.store.config.lock();
         let ids: Vec<String> = cfg
             .accounts
             .iter()
@@ -241,21 +296,25 @@ pub fn run() {
             std::fs::create_dir_all(&dir).ok();
             let cache_dir = dir.join("auth-cache");
             std::fs::create_dir_all(&cache_dir).ok();
+            let avatar_dir = dir.join("avatars");
+            std::fs::create_dir_all(&avatar_dir).ok();
 
             let store = Arc::new(Store::load(dir.join("config.json")));
             let statuses = Arc::new(Mutex::new(HashMap::new()));
+            let secrets = Arc::new(SecretStore::new(cache_dir));
             let engine = Engine::new(
                 handle.clone(),
                 store.clone(),
                 statuses.clone(),
-                cache_dir.clone(),
+                secrets.clone(),
             );
 
             app.manage(AppState {
                 store,
                 engine,
                 statuses,
-                cache_dir,
+                secrets,
+                avatar_dir,
             });
 
             // --- System tray: keep bots reachable while the window is hidden ---
@@ -332,6 +391,8 @@ pub fn run() {
             get_state,
             set_server,
             set_language,
+            set_show_avatars,
+            get_avatar,
             set_selected,
             set_all_selected,
             add_account,
