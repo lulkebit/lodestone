@@ -8,6 +8,28 @@ und das Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 Die Einträge der jeweils installierten Version werden nach einem Update
 automatisch in der App unter „Was ist neu" angezeigt.
 
+## [0.4.1] - 2026-06-15
+
+### Changed
+
+- **No more Node.js requirement.** The Minecraft engine was rewritten from the
+  Node/mineflayer sidecar to [azalea](https://github.com/azalea-rs/azalea), a
+  pure-Rust headless client built into the app. Installing and running lodestone
+  no longer needs Node.js (`LODESTONE_NODE` is gone), and the bots run inside the
+  app instead of as separate processes.
+- **Resource readout is now a whole-app total.** Because the bots share one
+  process, CPU and memory are reported for the app as a whole rather than per
+  account. Per-account status and uptime are unchanged.
+
+### Note
+
+- Accounts must sign in again once after updating: the token cache format
+  changed with the new engine.
+
+### Fixed
+
+- Update Cargo.toml to change Rust edition from 2026 to 2021
+
 ## [0.4.0] - 2026-06-15
 
 ### Changed
