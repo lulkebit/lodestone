@@ -1,6 +1,6 @@
 [package]
 name = "lodestone"
-version = "0.4.0"
+version = "0.4.1"
 description = "Headless Minecraft AFK Manager"
 authors = ["Luke Schröter"]
 edition = "2021"
