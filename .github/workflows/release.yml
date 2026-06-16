@@ -41,20 +41,22 @@ jobs:
         with:
           node-version: lts/*
 
-      # tauri-action derives the release tag from tauri.conf.json's version. If
-      # that drifts from the pushed git tag, builds get attached to the wrong
-      # (older) release. Fail fast unless every version source matches the tag.
+      # The release is tagged from the pushed git tag (see tauri-action below),
+      # and the app reports its version from Cargo.toml (package.json is kept in
+      # sync). Fail fast if those drift from the tag. tauri.conf.json carries no
+      # version by design (it inherits from Cargo.toml), so it's only checked
+      # when it actually declares one.
       - name: Verify version matches tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
           TAG="${GITHUB_REF_NAME#v}"
-          CONF=$(node -p "require('./src-tauri/tauri.conf.json').version")
           PKG=$(node -p "require('./package.json').version")
           CARGO=$(grep -m1 '^version' src-tauri/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "tag=$TAG  tauri.conf.json=$CONF  package.json=$PKG  Cargo.toml=$CARGO"
-          for V in "$CONF" "$PKG" "$CARGO"; do
-            if [ "$V" != "$TAG" ]; then
+          CONF=$(node -p "require('./src-tauri/tauri.conf.json').version || ''")
+          echo "tag=$TAG  package.json=$PKG  Cargo.toml=$CARGO  tauri.conf.json=${CONF:-<inherits>}"
+          for V in "$PKG" "$CARGO" "$CONF"; do
+            if [ -n "$V" ] && [ "$V" != "$TAG" ]; then
               echo "::error::Version mismatch: pushed tag is v$TAG but a version file says $V. Run 'npm run release' so all version files match the tag, then retag."
               exit 1
             fi
@@ -106,8 +108,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: v__VERSION__
-          releaseName: "lodestone v__VERSION__"
+          # Use the exact pushed tag so the build always attaches to the right
+          # release, independent of where the app version is declared.
+          tagName: ${{ github.ref_name }}
+          releaseName: "lodestone ${{ github.ref_name }}"
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
