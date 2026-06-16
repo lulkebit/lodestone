@@ -51,18 +51,18 @@ and open it. There's nothing else to install: the connection engine is built in.
 
 ### Use it
 
-1. **Add an account.** Click *+ Hinzufügen*. A code and a link appear: open the
+1. **Add an account.** Click *+ Add*. A code and a link appear: open the
    link, enter the code, and sign in with Microsoft. The window closes itself
    once you're signed in.
 2. **Enter a server**, for example `mc.example.net` or `192.168.0.10:25565`.
 3. **Pick the accounts** you want with the checkboxes.
-4. **Start them** with *Ausgewählte starten*, or connect each one individually.
-   Status and uptime update live, and *Alle trennen* disconnects everyone.
+4. **Start them** with *Start selected*, or connect each one individually.
+   Status and uptime update live, and *Disconnect all* disconnects everyone.
 
 ## Automatic updates
 
 lodestone checks for new versions on launch. When one is available, a banner
-appears: click **Aktualisieren** and it downloads, installs, and restarts into
+appears: click **Update now** and it downloads, installs, and restarts into
 the new version. After updating, a **"What's new"** screen shows you what
 changed. You can reopen it any time by clicking the version number in the top
 right. The full history lives in the [changelog](CHANGELOG.md).
