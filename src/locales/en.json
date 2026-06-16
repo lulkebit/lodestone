@@ -48,6 +48,7 @@
 
   "bot.error.connectFailed": "Connection failed after several attempts.",
   "bot.error.kicked": "Kicked by the server.",
+  "bot.error.unstable": "Connection keeps dropping right after joining. The server may not be running version 1.21.11.",
   "bot.error.sidecarStart": "Could not start the bot engine.",
 
   "error.accountNotFound": "Account not found.",

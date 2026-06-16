@@ -48,6 +48,7 @@
 
   "bot.error.connectFailed": "Verbindung nach mehreren Versuchen fehlgeschlagen.",
   "bot.error.kicked": "Vom Server gekickt.",
+  "bot.error.unstable": "Verbindung bricht direkt nach dem Beitreten immer wieder ab. Der Server läuft evtl. nicht auf Version 1.21.11.",
   "bot.error.sidecarStart": "Bot-Motor konnte nicht gestartet werden.",
 
   "error.accountNotFound": "Account nicht gefunden.",

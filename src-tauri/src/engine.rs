@@ -11,8 +11,9 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use azalea::auto_reconnect::AutoReconnectDelay;
 use azalea::prelude::*;
 use azalea_auth::cache::ExpiringValue;
 use azalea_auth::{
@@ -23,8 +24,8 @@ use parking_lot::Mutex;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::Notify;
 use tokio::time::{interval, sleep};
+use tokio_util::sync::CancellationToken;
 
 use crate::secrets::SecretStore;
 use crate::store::{Account as StoredAccount, Store};
@@ -41,6 +42,16 @@ type Statuses = Arc<Mutex<HashMap<String, StatusInfo>>>;
 /// Give up only if we never managed to connect (likely ban/whitelist/bad
 /// config). Once connected at least once, reconnect forever.
 const MAX_INITIAL_ATTEMPTS: u32 = 8;
+
+/// A connection that lasts at least this long counts as "stable" and resets the
+/// unstable-drop counter.
+const STABLE_SECS: u64 = 20;
+
+/// If the bot spawns but gets dropped again within `STABLE_SECS` this many times
+/// in a row, stop reconnecting and surface an error. This catches servers we can
+/// reach but can't stay on (e.g. a protocol/version mismatch that makes azalea
+/// disconnect right after joining) instead of looping forever.
+const MAX_UNSTABLE_DROPS: u32 = 4;
 
 /// Messages from the Tauri (UI) side to the single Minecraft thread.
 enum Cmd {
@@ -113,7 +124,7 @@ impl Engine {
 
 /// Per-bot control handle held by the manager.
 struct BotHandle {
-    stop: Arc<Notify>,
+    stop: CancellationToken,
     token: u64,
 }
 
@@ -138,7 +149,7 @@ async fn manager(
                 }
                 next_token += 1;
                 let token = next_token;
-                let stop = Arc::new(Notify::new());
+                let stop = CancellationToken::new();
                 let secrets2 = secrets.clone();
                 let (app2, statuses2, stop2, tx2, id2) = (
                     app.clone(),
@@ -155,14 +166,14 @@ async fn manager(
             }
             Cmd::StopBot { id } => {
                 if let Some(b) = bots.remove(&id) {
-                    b.stop.notify_one();
+                    b.stop.cancel();
                 }
                 emit_status(&app, &statuses, &id, "disconnected", None, None, None, None);
             }
             Cmd::StopAll => {
                 let ids: Vec<String> = bots.keys().cloned().collect();
                 for (_, b) in bots.drain() {
-                    b.stop.notify_one();
+                    b.stop.cancel();
                 }
                 for id in ids {
                     emit_status(&app, &statuses, &id, "disconnected", None, None, None, None);
@@ -203,12 +214,13 @@ async fn run_bot(
     id: &str,
     address: &str,
     secrets: &SecretStore,
-    stop: &Notify,
+    stop: &CancellationToken,
 ) {
     let http = reqwest::Client::new();
     let addr = clean_address(address);
     let mut attempts: u32 = 0;
     let mut ever_connected = false;
+    let mut unstable_drops: u32 = 0;
     let mut last_error: Option<String> = None;
 
     loop {
@@ -228,7 +240,7 @@ async fn run_bot(
         //    and build the account azalea will connect with.
         let account = tokio::select! {
             r = ensure_account(&http, secrets, id, app) => r,
-            _ = stop.notified() => return,
+            _ = stop.cancelled() => return,
         };
         let account = match account {
             Ok(a) => a,
@@ -247,7 +259,7 @@ async fn run_bot(
         // 2. Connect.
         let joined = tokio::select! {
             r = Client::join(account, addr.as_str()) => r,
-            _ = stop.notified() => return,
+            _ = stop.cancelled() => return,
         };
         let (client, mut rx) = match joined {
             Ok(v) => v,
@@ -263,16 +275,26 @@ async fn run_bot(
             }
         };
 
+        // lodestone drives reconnection itself (this loop), so switch off azalea's
+        // built-in auto-reconnect. Without this, stopping a bot would let azalea
+        // silently rejoin the server a few seconds later, behind our back and with
+        // no UI status — and it would also fight our own reconnect logic.
+        client
+            .ecs
+            .lock()
+            .insert_resource(AutoReconnectDelay::new(Duration::MAX));
+
         // 3. Stay connected: forward status, run gentle anti-AFK, watch for drops.
         let mut afk = interval(Duration::from_secs(45));
         afk.tick().await; // discard the immediate first tick
         let mut yaw: f32 = 0.0;
         let mut spawned = false;
+        let mut spawned_at: Option<Instant> = None;
         let mut reason: Option<String> = None;
 
         loop {
             tokio::select! {
-                _ = stop.notified() => {
+                _ = stop.cancelled() => {
                     client.disconnect();
                     return;
                 }
@@ -290,6 +312,7 @@ async fn run_bot(
                         Some(Event::Login) | Some(Event::Spawn) => {
                             if !spawned {
                                 spawned = true;
+                                spawned_at = Some(Instant::now());
                                 ever_connected = true;
                                 attempts = 0;
                                 last_error = None;
@@ -313,6 +336,36 @@ async fn run_bot(
         if let Some(r) = reason {
             last_error = Some(r);
         }
+
+        // We spawned but got dropped again. If that keeps happening almost
+        // immediately, the server is one we can reach but not stay on (often a
+        // protocol/version mismatch). Give up with a clear error instead of
+        // reconnecting forever; a connection that held for a while resets this.
+        if spawned {
+            let stable = spawned_at
+                .map(|t| t.elapsed().as_secs() >= STABLE_SECS)
+                .unwrap_or(false);
+            if stable {
+                unstable_drops = 0;
+            } else {
+                unstable_drops += 1;
+                if unstable_drops >= MAX_UNSTABLE_DROPS {
+                    let err = last_error.as_deref().filter(|s| !s.is_empty());
+                    emit_status(
+                        app,
+                        statuses,
+                        id,
+                        "error",
+                        None,
+                        err,
+                        Some("bot.error.unstable"),
+                        None,
+                    );
+                    return;
+                }
+            }
+        }
+
         if give_up(app, statuses, id, &mut attempts, ever_connected, &last_error) {
             return;
         }
@@ -542,10 +595,10 @@ fn backoff_delay(attempts: u32) -> Duration {
 }
 
 /// Sleep for `dur`, returning early with `true` if the bot was asked to stop.
-async fn wait_with_stop(stop: &Notify, dur: Duration) -> bool {
+async fn wait_with_stop(stop: &CancellationToken, dur: Duration) -> bool {
     tokio::select! {
         _ = sleep(dur) => false,
-        _ = stop.notified() => true,
+        _ = stop.cancelled() => true,
     }
 }
 

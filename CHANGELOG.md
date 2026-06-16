@@ -42,6 +42,18 @@ automatisch in der App unter „Was ist neu" angezeigt.
 - The frontend was split into focused modules (state, API, icons, and one module
   per view), which makes the UI easier to maintain and extend.
 
+### Fixed
+
+- **Disconnect now reliably stops a bot.** Disconnecting could previously leave
+  the bot running in the background; it now stops for good.
+- **No more silent reconnects.** A stopped bot no longer rejoins the server on
+  its own a few seconds later. The engine's built-in auto-reconnect was
+  reconnecting behind the app's back; lodestone now fully controls reconnection,
+  so the status you see matches what's really happening.
+- **Clear error on servers it can't stay on.** If a bot connects but keeps
+  getting dropped right after joining, lodestone now stops with an explanation
+  instead of reconnecting forever.
+
 ## [0.4.1] - 2026-06-15
 
 ### Changed
