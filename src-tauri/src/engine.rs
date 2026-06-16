@@ -53,9 +53,17 @@ const STABLE_SECS: u64 = 20;
 /// disconnect right after joining) instead of looping forever.
 const MAX_UNSTABLE_DROPS: u32 = 4;
 
+/// Delay between consecutive connects when starting several accounts at once.
+/// Spacing the joins out keeps a burst of clients from one IP from tripping a
+/// server's connection throttle or anti-bot checks (which often fire when many
+/// players join within the same second).
+const START_STAGGER: Duration = Duration::from_millis(1200);
+
 /// Messages from the Tauri (UI) side to the single Minecraft thread.
 enum Cmd {
     StartBot { id: String, address: String },
+    /// Start several accounts, spacing the connects out (see [`START_STAGGER`]).
+    StartMany { ids: Vec<String>, address: String },
     StopBot { id: String },
     StopAll,
     StartLogin { id: String },
@@ -105,6 +113,14 @@ impl Engine {
         let _ = self.cmd_tx.send(Cmd::StartBot { id, address });
     }
 
+    /// Start every account in `ids`, but spaced out instead of all at once, so a
+    /// burst of joins from one IP doesn't trip server-side throttling. The
+    /// stagger is cancellable: a later `start_many` or a `stop_all` drops any
+    /// connects still waiting in the queue.
+    pub fn start_many(&self, ids: Vec<String>, address: String) {
+        let _ = self.cmd_tx.send(Cmd::StartMany { ids, address });
+    }
+
     pub fn stop_bot(&self, id: &str) {
         let _ = self.cmd_tx.send(Cmd::StopBot { id: id.to_string() });
     }
@@ -139,6 +155,8 @@ async fn manager(
 ) {
     let mut bots: HashMap<String, BotHandle> = HashMap::new();
     let mut login: Option<tokio::task::JoinHandle<()>> = None;
+    // The in-flight "start selected" task that feeds `StartBot`s on a timer.
+    let mut stagger: Option<tokio::task::JoinHandle<()>> = None;
     let mut next_token: u64 = 0;
 
     while let Some(cmd) = cmd_rx.recv().await {
@@ -164,6 +182,24 @@ async fn manager(
                 });
                 bots.insert(id, BotHandle { stop, token });
             }
+            Cmd::StartMany { ids, address } => {
+                // Replace any still-running staggered start, then queue these.
+                if let Some(h) = stagger.take() {
+                    h.abort();
+                }
+                let tx = cmd_tx.clone();
+                stagger = Some(tokio::task::spawn_local(async move {
+                    for (i, id) in ids.into_iter().enumerate() {
+                        if i > 0 {
+                            sleep(START_STAGGER).await;
+                        }
+                        let _ = tx.send(Cmd::StartBot {
+                            id,
+                            address: address.clone(),
+                        });
+                    }
+                }));
+            }
             Cmd::StopBot { id } => {
                 if let Some(b) = bots.remove(&id) {
                     b.stop.cancel();
@@ -171,6 +207,11 @@ async fn manager(
                 emit_status(&app, &statuses, &id, "disconnected", None, None, None, None);
             }
             Cmd::StopAll => {
+                // Cancel any queued staggered connects so they don't reconnect
+                // accounts the user just asked to disconnect.
+                if let Some(h) = stagger.take() {
+                    h.abort();
+                }
                 let ids: Vec<String> = bots.keys().cloned().collect();
                 for (_, b) in bots.drain() {
                     b.stop.cancel();
@@ -579,7 +620,7 @@ fn spawn_metrics(app: AppHandle) {
 }
 
 /// Strip a leading scheme (e.g. `tcp://`) so azalea can resolve `host[:port]`.
-fn clean_address(a: &str) -> String {
+pub fn clean_address(a: &str) -> String {
     let a = a.trim();
     match a.find("://") {
         Some(i) => a[i + 3..].to_string(),

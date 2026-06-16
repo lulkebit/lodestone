@@ -33,7 +33,14 @@ pub struct Config {
     /// to on, including for configs written before this field existed.
     #[serde(default = "default_true")]
     pub show_avatars: bool,
+    /// Recently used server addresses, most-recent first, for the quick-pick
+    /// list under the server field. Capped at [`HISTORY_MAX`].
+    #[serde(default)]
+    pub server_history: Vec<String>,
 }
+
+/// How many recent servers to keep in [`Config::server_history`].
+const HISTORY_MAX: usize = 8;
 
 fn default_true() -> bool {
     true
@@ -47,6 +54,7 @@ impl Default for Config {
             language: None,
             last_seen_version: None,
             show_avatars: true,
+            server_history: Vec::new(),
         }
     }
 }
@@ -74,5 +82,21 @@ impl Store {
         if let Ok(json) = serde_json::to_string_pretty(&*cfg) {
             let _ = std::fs::write(&self.path, json);
         }
+    }
+
+    /// Record `address` as the most-recently-used server: move it to the front,
+    /// drop duplicates, and cap the list. A no-op for blank input. Persists.
+    pub fn push_history(&self, address: &str) {
+        let address = address.trim();
+        if address.is_empty() {
+            return;
+        }
+        {
+            let mut cfg = self.config.lock();
+            cfg.server_history.retain(|s| s != address);
+            cfg.server_history.insert(0, address.to_string());
+            cfg.server_history.truncate(HISTORY_MAX);
+        }
+        self.save();
     }
 }

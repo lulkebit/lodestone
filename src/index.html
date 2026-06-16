@@ -41,17 +41,29 @@
       <main class="content">
         <section class="section server-section">
           <label class="label" for="server-input" data-i18n="server.label">Server</label>
-          <div class="server-row">
-            <span class="field-ico" data-icon="server" data-icon-size="16" aria-hidden="true"></span>
-            <input
-              id="server-input"
-              type="text"
-              data-i18n-placeholder="server.placeholder"
-              placeholder="mc.example.net oder 192.168.0.10:25565"
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <span class="save-hint" id="server-save-hint" data-i18n="common.saved">Gespeichert</span>
+          <div class="server-field">
+            <div class="server-row">
+              <span class="field-ico" data-icon="server" data-icon-size="16" aria-hidden="true"></span>
+              <input
+                id="server-input"
+                type="text"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded="false"
+                aria-controls="server-suggest"
+                data-i18n-placeholder="server.placeholder"
+                placeholder="mc.example.net oder 192.168.0.10:25565"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <span class="save-hint" id="server-save-hint" data-i18n="common.saved">Gespeichert</span>
+            </div>
+            <div class="server-suggest" id="server-suggest" role="listbox" hidden></div>
+          </div>
+          <div class="server-status" id="server-status" role="status" hidden>
+            <span class="server-status-dot" id="server-status-dot" aria-hidden="true"></span>
+            <span class="server-favicon" id="server-favicon" aria-hidden="true" hidden></span>
+            <span class="server-status-text" id="server-status-text"></span>
           </div>
         </section>
 
@@ -108,6 +120,7 @@
 
     <template id="account-row-template">
       <li class="account">
+        <span class="drag-handle" aria-hidden="true"></span>
         <label class="check">
           <input type="checkbox" class="account-select" />
         </label>

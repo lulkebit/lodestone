@@ -18,6 +18,8 @@ export const setShowAvatars = (enabled) => invoke("set_show_avatars", { enabled 
 export const getAvatar = (uuid) => invoke("get_avatar", { uuid });
 export const setSelected = (id, selected) => invoke("set_selected", { id, selected });
 export const setAllSelected = (selected) => invoke("set_all_selected", { selected });
+export const reorderAccounts = (ids) => invoke("reorder_accounts", { ids });
+export const pingServer = (address) => invoke("ping_server", { address });
 
 // --- Accounts ---
 export const addAccount = () => invoke("add_account");

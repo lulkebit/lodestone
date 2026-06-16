@@ -6,6 +6,7 @@ mod updater;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use base64::Engine as _;
 use engine::{Engine, StatusInfo};
@@ -79,6 +80,22 @@ struct StateView {
     accounts: Vec<AccountView>,
     language: Option<String>,
     show_avatars: bool,
+    server_history: Vec<String>,
+}
+
+/// Result of a Server List Ping, surfaced under the server field so the user can
+/// see a server is reachable (and on the right version) before connecting.
+#[derive(Serialize, Default)]
+struct ServerStatus {
+    online: bool,
+    players_online: Option<i64>,
+    players_max: Option<i64>,
+    version: Option<String>,
+    motd: Option<String>,
+    /// The server's icon as a `data:` URL, exactly as it sends it (may be absent).
+    favicon: Option<String>,
+    /// An i18n key describing why the ping failed, when `online` is false.
+    error: Option<String>,
 }
 
 #[tauri::command]
@@ -107,6 +124,46 @@ fn get_state(state: State<AppState>) -> StateView {
         accounts,
         language: cfg.language.clone(),
         show_avatars: cfg.show_avatars,
+        server_history: cfg.server_history.clone(),
+    }
+}
+
+/// Ping a Minecraft server (Server List Ping) and report its status. Resolves
+/// SRV records and the default port via azalea, and times out so an unreachable
+/// host can't hang the call. Never errors: failures come back as `online: false`
+/// with an i18n `error` key, which keeps the UI simple.
+#[tauri::command]
+async fn ping_server(address: String) -> ServerStatus {
+    let address = engine::clean_address(&address);
+    if address.is_empty() {
+        return ServerStatus {
+            error: Some("error.noServer".into()),
+            ..Default::default()
+        };
+    }
+    let ping = azalea::ping::ping_server(address.as_str());
+    match tokio::time::timeout(Duration::from_secs(6), ping).await {
+        Ok(Ok(r)) => {
+            let motd = r.description.to_string();
+            let motd = motd.trim();
+            ServerStatus {
+                online: true,
+                players_online: Some(r.players.online as i64),
+                players_max: Some(r.players.max as i64),
+                version: Some(r.version.name.clone()),
+                motd: (!motd.is_empty()).then(|| motd.to_string()),
+                favicon: r.favicon.clone(),
+                error: None,
+            }
+        }
+        Ok(Err(_)) => ServerStatus {
+            error: Some("server.ping.offline".into()),
+            ..Default::default()
+        },
+        Err(_) => ServerStatus {
+            error: Some("server.ping.timeout".into()),
+            ..Default::default()
+        },
     }
 }
 
@@ -183,6 +240,19 @@ fn set_all_selected(state: State<AppState>, selected: bool) {
     state.store.save();
 }
 
+/// Reorder the stored accounts to match `ids` (the new top-to-bottom order from
+/// a drag-and-drop). Ids not present keep their relative order at the end, so a
+/// stale list from the UI can't drop accounts.
+#[tauri::command]
+fn reorder_accounts(state: State<AppState>, ids: Vec<String>) {
+    {
+        let mut cfg = state.store.config.lock();
+        cfg.accounts
+            .sort_by_key(|a| ids.iter().position(|id| id == &a.id).unwrap_or(usize::MAX));
+    }
+    state.store.save();
+}
+
 #[tauri::command]
 async fn add_account(state: State<'_, AppState>) -> Result<(), String> {
     let id = Uuid::new_v4().to_string();
@@ -231,6 +301,7 @@ async fn start_account(state: State<'_, AppState>, id: String) -> Result<(), Str
     if address.trim().is_empty() {
         return Err("error.noServer".into());
     }
+    state.store.push_history(&address);
     state.engine.start_bot(id, address);
     Ok(())
 }
@@ -258,9 +329,8 @@ async fn start_selected_internal(app: &AppHandle) -> Result<(), String> {
     if address.trim().is_empty() {
         return Err("error.noServer".into());
     }
-    for id in ids {
-        state.engine.start_bot(id, address.clone());
-    }
+    state.store.push_history(&address);
+    state.engine.start_many(ids, address);
     Ok(())
 }
 
@@ -395,6 +465,7 @@ pub fn run() {
             get_avatar,
             set_selected,
             set_all_selected,
+            reorder_accounts,
             add_account,
             cancel_add_account,
             remove_account,
@@ -402,6 +473,7 @@ pub fn run() {
             stop_account,
             start_selected,
             stop_all,
+            ping_server,
             open_url,
             updater::get_app_version,
             updater::check_for_update,

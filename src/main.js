@@ -11,23 +11,7 @@ import { mountAccounts } from "./js/accounts.js";
 import { mountAuth, resolveReauthIfConnected } from "./js/auth.js";
 import { mountUpdates } from "./js/updates.js";
 import { mountSettings } from "./js/settings.js";
-
-let serverInput;
-
-function wireServerInput() {
-  serverInput = $("#server-input");
-  const hint = $("#server-save-hint");
-  let timer;
-  serverInput.addEventListener("input", () => {
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
-      state.serverAddress = serverInput.value.trim();
-      await api.setServer(state.serverAddress);
-      hint.classList.add("show");
-      setTimeout(() => hint.classList.remove("show"), 1400);
-    }, 400);
-  });
-}
+import { mountServer, pingCurrent } from "./js/server.js";
 
 function wireMetrics() {
   const cpuEl = $("#overall-cpu");
@@ -54,8 +38,8 @@ function wireBotStatus() {
 function applyState(s) {
   state.accounts = (s.accounts || []).map(toAccount);
   state.serverAddress = s.server_address || "";
+  state.serverHistory = s.server_history || [];
   state.showAvatars = s.show_avatars !== false;
-  serverInput.value = state.serverAddress;
   notify();
 }
 
@@ -72,11 +56,12 @@ async function boot() {
   mountAuth();
   mountUpdates();
   mountSettings();
-  wireServerInput();
+  mountServer();
   wireMetrics();
   wireBotStatus();
 
   applyState(s);
+  pingCurrent();
 }
 
 window.addEventListener("DOMContentLoaded", boot);

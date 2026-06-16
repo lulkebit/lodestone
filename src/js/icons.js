@@ -55,6 +55,11 @@ const PATHS = {
   connect: [
     "M4 12V8.44c0-4.42 3.13-6.23 6.96-4.02l3.09 1.78 3.09 1.78c3.83 2.21 3.83 5.83 0 8.04l-3.09 1.78-3.09 1.78C7.13 21.79 4 19.98 4 15.56V12Z",
   ],
+  // A 2x3 grip of dots. Each "h.01" is a zero-length segment that renders as a
+  // dot thanks to the round line caps, so it stays in the stroke-only icon style.
+  drag: [
+    "M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01",
+  ],
 };
 
 export function iconSvg(name, { size = 18, stroke = 1.5, cls = "" } = {}) {

@@ -2,13 +2,28 @@
 // and the live uptime ticker. Subscribes to the store and re-renders on change.
 
 import * as api from "./api.js";
-import { state, subscribe, notify, findAccount, countConnected, updateStatus } from "./store.js";
+import {
+  state,
+  subscribe,
+  notify,
+  findAccount,
+  countConnected,
+  updateStatus,
+  rememberServer,
+} from "./store.js";
 import { $, formatUptime } from "./dom.js";
 import { iconSvg, setIcon } from "./icons.js";
 import { toast, confirmDialog } from "./overlays.js";
 import { t } from "../i18n.js";
 
 let listEl, emptyEl, countEl, selectAllEl, botsEl, rowTpl;
+
+// True while a row is being dragged to reorder. Renders are paused so a live
+// status update can't rebuild the list out from under the drag.
+let dragging = false;
+// The active pointer-drag session: { row, id, startY, active }. We use Pointer
+// Events rather than HTML5 drag-and-drop, which is unreliable in WKWebView.
+let drag = null;
 
 // uuid -> data: URL, so re-renders reuse a fetched avatar without flicker.
 const avatarCache = new Map();
@@ -57,6 +72,7 @@ function setAvatar(el, uuid) {
 function buildRow(acc) {
   const node = rowTpl.content.firstElementChild.cloneNode(true);
   node.dataset.id = acc.id;
+  wireDrag(node, acc.id);
   const connected = acc.status === "connected";
   const busy = connected || acc.status === "connecting";
 
@@ -100,7 +116,112 @@ function buildRow(acc) {
   return node;
 }
 
+// Reorder is driven from the grip handle only (so checkbox/buttons keep
+// working). Pointer Events give us a reliable drag in WKWebView plus live
+// visual feedback as rows shift around the one being moved.
+function wireDrag(node, id) {
+  const handle = node.querySelector(".drag-handle");
+  setIcon(handle, "drag", { size: 16, stroke: 2 });
+  handle.title = t("account.reorder");
+  handle.addEventListener("pointerdown", (e) => startDrag(e, node, id, handle));
+}
+
+function startDrag(e, row, id, handle) {
+  if (e.button) return; // primary button only
+  e.preventDefault();
+  drag = { row, id, startY: e.clientY, started: false };
+  // Capture so we keep getting moves even if the pointer outruns the row.
+  try {
+    handle.setPointerCapture(e.pointerId);
+  } catch {}
+  document.addEventListener("pointermove", onDragMove);
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointercancel", endDrag);
+}
+
+// Lift the row out of the list into a floating, pointer-following element, and
+// drop a placeholder into its slot to show where it will land.
+function liftRow(e) {
+  const { row } = drag;
+  const rect = row.getBoundingClientRect();
+  drag.grabDy = e.clientY - rect.top; // keep the grabbed point under the cursor
+
+  const ph = document.createElement("li");
+  ph.className = "account-placeholder";
+  ph.style.height = rect.height + "px";
+  row.before(ph);
+  drag.ph = ph;
+
+  row.classList.add("dragging"); // position: fixed comes from here
+  row.style.left = rect.left + "px";
+  row.style.width = rect.width + "px";
+  row.style.top = e.clientY - drag.grabDy + "px";
+  dragging = true;
+}
+
+function onDragMove(e) {
+  if (!drag) return;
+  // Wait for a little movement so a plain click on the handle doesn't lift it.
+  if (!drag.started) {
+    if (Math.abs(e.clientY - drag.startY) < 4) return;
+    drag.started = true;
+    liftRow(e);
+  }
+  e.preventDefault();
+  // Float with the cursor...
+  drag.row.style.top = e.clientY - drag.grabDy + "px";
+  // ...and slide the placeholder to the slot the cursor is over.
+  const after = rowAfter(e.clientY);
+  if (after == null) {
+    if (listEl.lastElementChild !== drag.ph) listEl.appendChild(drag.ph);
+  } else if (after.previousElementSibling !== drag.ph) {
+    listEl.insertBefore(drag.ph, after);
+  }
+}
+
+function endDrag() {
+  if (!drag) return;
+  const { row, ph, started } = drag;
+  drag = null;
+  document.removeEventListener("pointermove", onDragMove);
+  document.removeEventListener("pointerup", endDrag);
+  document.removeEventListener("pointercancel", endDrag);
+  if (!started) return;
+  // Drop the row into the placeholder's slot, clear the floating styles, persist.
+  row.classList.remove("dragging");
+  row.style.left = "";
+  row.style.top = "";
+  row.style.width = "";
+  ph.replaceWith(row);
+  dragging = false;
+  commitOrder();
+}
+
+// The row the cursor is currently above the midpoint of, used as the insertion
+// point. Returns null past the last row (append to the end).
+function rowAfter(y) {
+  let closest = { offset: Number.NEGATIVE_INFINITY, el: null };
+  for (const row of listEl.querySelectorAll(".account:not(.dragging)")) {
+    const box = row.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) closest = { offset, el: row };
+  }
+  return closest.el;
+}
+
+// Persist the order shown in the DOM to the store and the backend, then
+// re-render so each row's listeners are freshly bound to the new positions.
+function commitOrder() {
+  const ids = [...listEl.querySelectorAll(".account")].map((el) => el.dataset.id);
+  const byId = new Map(state.accounts.map((a) => [a.id, a]));
+  const reordered = ids.map((id) => byId.get(id)).filter(Boolean);
+  if (reordered.length === state.accounts.length) state.accounts = reordered;
+  api.reorderAccounts(ids).catch(() => {});
+  notify();
+}
+
 function render() {
+  if (dragging) return; // don't rebuild the list mid-drag
   const accounts = state.accounts;
   countEl.textContent = String(accounts.length);
   emptyEl.hidden = accounts.length > 0;
@@ -135,6 +256,7 @@ async function startAccount(id) {
     toast(t("toast.noServer"), true);
     return;
   }
+  rememberServer(state.serverAddress);
   updateStatus(id, "connecting");
   try {
     await api.startAccount(id);
@@ -184,6 +306,7 @@ async function startSelected() {
     toast(t("toast.noneSelected"), true);
     return;
   }
+  rememberServer(state.serverAddress);
   for (const a of selected) {
     if (a.status !== "connected" && a.status !== "connecting") updateStatus(a.id, "connecting");
   }

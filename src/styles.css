@@ -334,6 +334,104 @@ body {
   opacity: 1;
 }
 
+/* ---------- Server status + history ---------- */
+.server-field {
+  position: relative;
+}
+.server-suggest {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  max-height: 220px;
+  overflow-y: auto;
+  animation: fade var(--dur-1) var(--ease);
+}
+.server-suggest[hidden] {
+  display: none;
+}
+.server-suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 9px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.server-suggest-item:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.server-suggest-ico {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.server-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  min-height: 18px;
+}
+.server-status[hidden] {
+  display: none;
+}
+.server-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+}
+.server-status-dot.checking {
+  background: var(--warn);
+  animation: pulse 1.3s var(--ease) infinite;
+}
+.server-status-dot.online {
+  background: var(--ok);
+}
+.server-status-dot.offline {
+  background: var(--err);
+}
+.server-favicon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+  image-rendering: pixelated;
+  border: 1px solid var(--line);
+}
+.server-favicon[hidden] {
+  display: none;
+}
+.server-status-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- Stats ---------- */
 .stats-section {
   display: flex;
@@ -410,11 +508,54 @@ body {
   gap: 12px;
   padding: 10px;
   border-radius: var(--radius-sm);
-  transition: background var(--dur-1) var(--ease);
+  transition: background var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
 }
 @media (hover: hover) and (pointer: fine) {
   .account:hover {
     background: var(--surface);
+  }
+}
+/* The row being dragged is lifted out of the list (position set inline) and
+   floats under the cursor. On a near-black UI the "lift" reads from a lighter
+   surface + a crisp 1px ring, not from the (barely visible) drop shadow. */
+.account.dragging {
+  position: fixed;
+  z-index: 40;
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--line-2), 0 16px 40px rgba(0, 0, 0, 0.6);
+  cursor: grabbing;
+}
+
+/* The gap left behind, showing where the row will drop. */
+.account-placeholder {
+  flex-shrink: 0;
+  list-style: none;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--line-2);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.drag-handle {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  margin-left: -4px;
+  flex-shrink: 0;
+  color: var(--line-2);
+  cursor: grab;
+  touch-action: none;
+  transition: color var(--dur-1) var(--ease);
+}
+.drag-handle:active,
+.account.dragging .drag-handle {
+  cursor: grabbing;
+}
+@media (hover: hover) and (pointer: fine) {
+  .account:hover .drag-handle {
+    color: var(--text-faint);
+  }
+  .drag-handle:hover {
+    color: var(--text-dim);
   }
 }
 

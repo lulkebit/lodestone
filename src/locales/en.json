@@ -3,6 +3,10 @@
 
   "server.label": "Server",
   "server.placeholder": "mc.example.net or 192.168.0.10:25565",
+  "server.checking": "Checking …",
+  "server.ping.offline": "Offline or unreachable",
+  "server.ping.timeout": "No response (timed out)",
+  "server.recent": "Recent servers",
 
   "stats.cpu": "CPU",
   "stats.ram": "RAM",
@@ -22,8 +26,7 @@
   "account.select": "Select {name}",
   "account.remove": "Remove",
   "account.remove.title": "Remove account",
-  "account.running": "running …",
-  "account.metrics": "CPU {cpu}% · RAM {mem} MB",
+  "account.reorder": "Drag to reorder",
 
   "status.disconnected": "Disconnected",
   "status.connecting": "Connecting …",

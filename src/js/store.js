@@ -5,9 +5,22 @@
 export const state = {
   accounts: [], // {id, username, uuid, selected, status, connectedAt, error, errorKey, attempt}
   serverAddress: "",
+  serverHistory: [], // recently used servers, most-recent first
   showAvatars: true,
   reauthId: null, // account id currently re-authenticating (expired session)
 };
+
+const HISTORY_MAX = 8;
+
+/** Move `addr` to the front of the in-session server history (deduped, capped). */
+export function rememberServer(addr) {
+  addr = (addr || "").trim();
+  if (!addr) return;
+  state.serverHistory = [addr, ...state.serverHistory.filter((s) => s !== addr)].slice(
+    0,
+    HISTORY_MAX
+  );
+}
 
 const listeners = new Set();
 
