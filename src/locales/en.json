@@ -3,13 +3,17 @@
 
   "server.label": "Server",
   "server.placeholder": "mc.example.net or 192.168.0.10:25565",
+  "server.checking": "Checking …",
+  "server.ping.offline": "Offline or unreachable",
+  "server.ping.timeout": "No response (timed out)",
+  "server.recent": "Recent servers",
 
   "stats.cpu": "CPU",
   "stats.ram": "RAM",
   "stats.bots": "Bots",
 
   "accounts.title": "Accounts",
-  "accounts.add": "+ Add",
+  "accounts.add": "Add",
   "accounts.empty.title": "No accounts yet.",
   "accounts.empty.sub": "Add a Microsoft account to get started.",
 
@@ -19,10 +23,10 @@
 
   "account.connect": "Connect",
   "account.disconnect": "Disconnect",
+  "account.select": "Select {name}",
   "account.remove": "Remove",
   "account.remove.title": "Remove account",
-  "account.running": "running …",
-  "account.metrics": "CPU {cpu}% · RAM {mem} MB",
+  "account.reorder": "Drag to reorder",
 
   "status.disconnected": "Disconnected",
   "status.connecting": "Connecting …",
@@ -47,6 +51,7 @@
 
   "bot.error.connectFailed": "Connection failed after several attempts.",
   "bot.error.kicked": "Kicked by the server.",
+  "bot.error.unstable": "Connection keeps dropping right after joining. The server may not be running version 1.21.11.",
   "bot.error.sidecarStart": "Could not start the bot engine.",
 
   "error.accountNotFound": "Account not found.",
@@ -69,6 +74,8 @@
   "settings.open": "Settings",
   "settings.language": "Language",
   "settings.language.sub": "Interface language",
+  "settings.avatars": "Show avatars",
+  "settings.avatars.sub": "Load skin heads from mc-heads.net and cache them locally",
   "settings.updates": "Updates",
   "settings.checkUpdates": "Check for updates",
   "settings.checking": "Checking …",

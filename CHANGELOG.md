@@ -8,6 +8,65 @@ und das Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 Die Einträge der jeweils installierten Version werden nach einem Update
 automatisch in der App unter „Was ist neu" angezeigt.
 
+## [1.0.0] - 2026-06-15
+
+### Security
+
+- **Sign-in tokens now live in your operating system's keychain** (the macOS
+  Keychain, the Windows Credential Manager, or the Linux Secret Service) instead
+  of a plaintext file. Tokens saved by older versions are migrated into the
+  keychain automatically the first time an account is used. If no keychain is
+  reachable, lodestone falls back to a file with owner-only permissions, so it
+  keeps working on headless setups.
+
+### Added
+
+- **A redesigned interface.** lodestone got a full visual refresh: a cleaner,
+  flat, typographic look with a consistent icon set, clearer per-account status
+  (a coloured dot plus label for connected, connecting, and error), a tidier
+  account list, and a proper toggle for the avatars setting.
+- **More accessible throughout.** Visible keyboard focus rings, dialog roles and
+  labels, Escape to close any dialog, labelled icon buttons, and respect for the
+  system "reduce motion" setting.
+- **Avatars can be turned off.** A new setting controls whether Minecraft head
+  avatars are loaded at all. With them on, each head is fetched once and cached
+  locally, so the list works offline afterwards and a UUID leaves your machine at
+  most once. With them off, nothing is requested from any third party.
+- **See a server before you connect.** The server field now pings the address as
+  you type and shows whether the server is reachable, along with its version,
+  player count, MOTD, and icon. A wrong address or a version mismatch is obvious
+  before you start instead of after several failed attempts. Servers you have
+  used recently appear as a quick-pick list under the field.
+- **Reorder accounts by dragging.** Grab the handle on the left of a row to lift
+  it out of the list and drop it anywhere; the new order is saved.
+
+### Changed
+
+- Internal state locking was hardened so a single unexpected error can no longer
+  cascade and bring the whole app down.
+- The app version now has a single source of truth, removing the version drift
+  that could publish a build under the wrong number.
+- The frontend was split into focused modules (state, API, icons, and one module
+  per view), which makes the UI easier to maintain and extend.
+- **Starting several accounts now spaces the connections out** instead of firing
+  them all at once, which avoids tripping a server's join throttle or anti-bot
+  checks when many accounts connect from one IP. Disconnecting everyone also
+  cancels any connections still queued.
+- Removed a couple of unused interface strings left over from before the
+  whole-app resource readout.
+
+### Fixed
+
+- **Disconnect now reliably stops a bot.** Disconnecting could previously leave
+  the bot running in the background; it now stops for good.
+- **No more silent reconnects.** A stopped bot no longer rejoins the server on
+  its own a few seconds later. The engine's built-in auto-reconnect was
+  reconnecting behind the app's back; lodestone now fully controls reconnection,
+  so the status you see matches what's really happening.
+- **Clear error on servers it can't stay on.** If a bot connects but keeps
+  getting dropped right after joining, lodestone now stops with an explanation
+  instead of reconnecting forever.
+
 ## [0.4.1] - 2026-06-15
 
 ### Changed

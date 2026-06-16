@@ -80,9 +80,15 @@ Adding a language is just a file change. Copy `src/locales/en.json` to
 ## Your accounts & privacy
 
 - **No passwords are ever stored.** Only the renewable tokens Microsoft issues.
-- Everything stays on your machine:
+- **Sign-in tokens live in your OS keychain**, not in a plaintext file: the
+  macOS Keychain, the Windows Credential Manager, or the Linux Secret Service
+  (GNOME Keyring / KWallet). If no keychain is reachable, lodestone falls back to
+  an owner-only file in `com.lodestone.app/auth-cache/`.
+- Avatars are optional. With them on, each skin head is fetched from
+  mc-heads.net once and cached at `com.lodestone.app/avatars/`, so a UUID leaves
+  your machine at most once. Turn them off in Settings to keep everything local.
+- Everything else stays on your machine:
   - Settings (accounts, selection, server): `com.lodestone.app/config.json`
-  - Sign-in token cache: `com.lodestone.app/auth-cache/`
 
   (under `~/Library/Application Support/` on macOS, `%AppData%` on Windows, and
   `~/.config/` on Linux).

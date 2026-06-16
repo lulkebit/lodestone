@@ -10,22 +10,24 @@
 //! account; a small task samples the whole process instead (`app:metrics`).
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use azalea::auto_reconnect::AutoReconnectDelay;
 use azalea::prelude::*;
 use azalea_auth::cache::ExpiringValue;
 use azalea_auth::{
     get_minecraft_token, get_ms_auth_token, get_ms_link_code, get_profile, refresh_ms_auth_token,
     AccessTokenResponse, ProfileResponse,
 };
+use parking_lot::Mutex;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::Notify;
 use tokio::time::{interval, sleep};
+use tokio_util::sync::CancellationToken;
 
+use crate::secrets::SecretStore;
 use crate::store::{Account as StoredAccount, Store};
 
 /// Live (non-persisted) connection state for an account, keyed by account id.
@@ -41,9 +43,27 @@ type Statuses = Arc<Mutex<HashMap<String, StatusInfo>>>;
 /// config). Once connected at least once, reconnect forever.
 const MAX_INITIAL_ATTEMPTS: u32 = 8;
 
+/// A connection that lasts at least this long counts as "stable" and resets the
+/// unstable-drop counter.
+const STABLE_SECS: u64 = 20;
+
+/// If the bot spawns but gets dropped again within `STABLE_SECS` this many times
+/// in a row, stop reconnecting and surface an error. This catches servers we can
+/// reach but can't stay on (e.g. a protocol/version mismatch that makes azalea
+/// disconnect right after joining) instead of looping forever.
+const MAX_UNSTABLE_DROPS: u32 = 4;
+
+/// Delay between consecutive connects when starting several accounts at once.
+/// Spacing the joins out keeps a burst of clients from one IP from tripping a
+/// server's connection throttle or anti-bot checks (which often fire when many
+/// players join within the same second).
+const START_STAGGER: Duration = Duration::from_millis(1200);
+
 /// Messages from the Tauri (UI) side to the single Minecraft thread.
 enum Cmd {
     StartBot { id: String, address: String },
+    /// Start several accounts, spacing the connects out (see [`START_STAGGER`]).
+    StartMany { ids: Vec<String>, address: String },
     StopBot { id: String },
     StopAll,
     StartLogin { id: String },
@@ -63,7 +83,7 @@ impl Engine {
         app: AppHandle,
         store: Arc<Store>,
         statuses: Statuses,
-        cache_dir: PathBuf,
+        secrets: Arc<SecretStore>,
     ) -> Arc<Engine> {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         spawn_metrics(app.clone());
@@ -81,7 +101,7 @@ impl Engine {
                 let local = tokio::task::LocalSet::new();
                 local.block_on(
                     &rt,
-                    manager(app, store, statuses, cache_dir, tx_for_thread, cmd_rx),
+                    manager(app, store, statuses, secrets, tx_for_thread, cmd_rx),
                 );
             })
             .expect("spawn minecraft thread");
@@ -91,6 +111,14 @@ impl Engine {
 
     pub fn start_bot(&self, id: String, address: String) {
         let _ = self.cmd_tx.send(Cmd::StartBot { id, address });
+    }
+
+    /// Start every account in `ids`, but spaced out instead of all at once, so a
+    /// burst of joins from one IP doesn't trip server-side throttling. The
+    /// stagger is cancellable: a later `start_many` or a `stop_all` drops any
+    /// connects still waiting in the queue.
+    pub fn start_many(&self, ids: Vec<String>, address: String) {
+        let _ = self.cmd_tx.send(Cmd::StartMany { ids, address });
     }
 
     pub fn stop_bot(&self, id: &str) {
@@ -112,7 +140,7 @@ impl Engine {
 
 /// Per-bot control handle held by the manager.
 struct BotHandle {
-    stop: Arc<Notify>,
+    stop: CancellationToken,
     token: u64,
 }
 
@@ -121,12 +149,14 @@ async fn manager(
     app: AppHandle,
     store: Arc<Store>,
     statuses: Statuses,
-    cache_dir: PathBuf,
+    secrets: Arc<SecretStore>,
     cmd_tx: UnboundedSender<Cmd>,
     mut cmd_rx: UnboundedReceiver<Cmd>,
 ) {
     let mut bots: HashMap<String, BotHandle> = HashMap::new();
     let mut login: Option<tokio::task::JoinHandle<()>> = None;
+    // The in-flight "start selected" task that feeds `StartBot`s on a timer.
+    let mut stagger: Option<tokio::task::JoinHandle<()>> = None;
     let mut next_token: u64 = 0;
 
     while let Some(cmd) = cmd_rx.recv().await {
@@ -137,8 +167,8 @@ async fn manager(
                 }
                 next_token += 1;
                 let token = next_token;
-                let stop = Arc::new(Notify::new());
-                let cache_file = cache_dir.join(format!("{id}.json"));
+                let stop = CancellationToken::new();
+                let secrets2 = secrets.clone();
                 let (app2, statuses2, stop2, tx2, id2) = (
                     app.clone(),
                     statuses.clone(),
@@ -147,21 +177,44 @@ async fn manager(
                     id.clone(),
                 );
                 tokio::task::spawn_local(async move {
-                    run_bot(&app2, &statuses2, &id2, &address, &cache_file, &stop2).await;
+                    run_bot(&app2, &statuses2, &id2, &address, &secrets2, &stop2).await;
                     let _ = tx2.send(Cmd::BotExited { id: id2, token });
                 });
                 bots.insert(id, BotHandle { stop, token });
             }
+            Cmd::StartMany { ids, address } => {
+                // Replace any still-running staggered start, then queue these.
+                if let Some(h) = stagger.take() {
+                    h.abort();
+                }
+                let tx = cmd_tx.clone();
+                stagger = Some(tokio::task::spawn_local(async move {
+                    for (i, id) in ids.into_iter().enumerate() {
+                        if i > 0 {
+                            sleep(START_STAGGER).await;
+                        }
+                        let _ = tx.send(Cmd::StartBot {
+                            id,
+                            address: address.clone(),
+                        });
+                    }
+                }));
+            }
             Cmd::StopBot { id } => {
                 if let Some(b) = bots.remove(&id) {
-                    b.stop.notify_one();
+                    b.stop.cancel();
                 }
                 emit_status(&app, &statuses, &id, "disconnected", None, None, None, None);
             }
             Cmd::StopAll => {
+                // Cancel any queued staggered connects so they don't reconnect
+                // accounts the user just asked to disconnect.
+                if let Some(h) = stagger.take() {
+                    h.abort();
+                }
                 let ids: Vec<String> = bots.keys().cloned().collect();
                 for (_, b) in bots.drain() {
-                    b.stop.notify_one();
+                    b.stop.cancel();
                 }
                 for id in ids {
                     emit_status(&app, &statuses, &id, "disconnected", None, None, None, None);
@@ -172,10 +225,10 @@ async fn manager(
                 if let Some(h) = login.take() {
                     h.abort();
                 }
-                let cache_file = cache_dir.join(format!("{id}.json"));
+                let secrets2 = secrets.clone();
                 let (app2, store2) = (app.clone(), store.clone());
                 login = Some(tokio::task::spawn_local(async move {
-                    run_login(&app2, &store2, &id, &cache_file).await;
+                    run_login(&app2, &store2, &secrets2, &id).await;
                 }));
             }
             Cmd::CancelLogin => {
@@ -201,13 +254,14 @@ async fn run_bot(
     statuses: &Statuses,
     id: &str,
     address: &str,
-    cache_file: &PathBuf,
-    stop: &Notify,
+    secrets: &SecretStore,
+    stop: &CancellationToken,
 ) {
     let http = reqwest::Client::new();
     let addr = clean_address(address);
     let mut attempts: u32 = 0;
     let mut ever_connected = false;
+    let mut unstable_drops: u32 = 0;
     let mut last_error: Option<String> = None;
 
     loop {
@@ -226,8 +280,8 @@ async fn run_bot(
         // 1. Authenticate (refresh the token or show a re-auth dialog as needed)
         //    and build the account azalea will connect with.
         let account = tokio::select! {
-            r = ensure_account(&http, cache_file, id, app) => r,
-            _ = stop.notified() => return,
+            r = ensure_account(&http, secrets, id, app) => r,
+            _ = stop.cancelled() => return,
         };
         let account = match account {
             Ok(a) => a,
@@ -246,7 +300,7 @@ async fn run_bot(
         // 2. Connect.
         let joined = tokio::select! {
             r = Client::join(account, addr.as_str()) => r,
-            _ = stop.notified() => return,
+            _ = stop.cancelled() => return,
         };
         let (client, mut rx) = match joined {
             Ok(v) => v,
@@ -262,16 +316,26 @@ async fn run_bot(
             }
         };
 
+        // lodestone drives reconnection itself (this loop), so switch off azalea's
+        // built-in auto-reconnect. Without this, stopping a bot would let azalea
+        // silently rejoin the server a few seconds later, behind our back and with
+        // no UI status — and it would also fight our own reconnect logic.
+        client
+            .ecs
+            .lock()
+            .insert_resource(AutoReconnectDelay::new(Duration::MAX));
+
         // 3. Stay connected: forward status, run gentle anti-AFK, watch for drops.
         let mut afk = interval(Duration::from_secs(45));
         afk.tick().await; // discard the immediate first tick
         let mut yaw: f32 = 0.0;
         let mut spawned = false;
+        let mut spawned_at: Option<Instant> = None;
         let mut reason: Option<String> = None;
 
         loop {
             tokio::select! {
-                _ = stop.notified() => {
+                _ = stop.cancelled() => {
                     client.disconnect();
                     return;
                 }
@@ -289,6 +353,7 @@ async fn run_bot(
                         Some(Event::Login) | Some(Event::Spawn) => {
                             if !spawned {
                                 spawned = true;
+                                spawned_at = Some(Instant::now());
                                 ever_connected = true;
                                 attempts = 0;
                                 last_error = None;
@@ -312,6 +377,36 @@ async fn run_bot(
         if let Some(r) = reason {
             last_error = Some(r);
         }
+
+        // We spawned but got dropped again. If that keeps happening almost
+        // immediately, the server is one we can reach but not stay on (often a
+        // protocol/version mismatch). Give up with a clear error instead of
+        // reconnecting forever; a connection that held for a while resets this.
+        if spawned {
+            let stable = spawned_at
+                .map(|t| t.elapsed().as_secs() >= STABLE_SECS)
+                .unwrap_or(false);
+            if stable {
+                unstable_drops = 0;
+            } else {
+                unstable_drops += 1;
+                if unstable_drops >= MAX_UNSTABLE_DROPS {
+                    let err = last_error.as_deref().filter(|s| !s.is_empty());
+                    emit_status(
+                        app,
+                        statuses,
+                        id,
+                        "error",
+                        None,
+                        err,
+                        Some("bot.error.unstable"),
+                        None,
+                    );
+                    return;
+                }
+            }
+        }
+
         if give_up(app, statuses, id, &mut attempts, ever_connected, &last_error) {
             return;
         }
@@ -356,30 +451,29 @@ fn give_up(
 
 /// We cache only the Microsoft refresh token (an `ExpiringValue`). azalea turns
 /// it into a Minecraft session and refreshes it as needed; persisting it lets
-/// the bot reconnect across restarts without a fresh login.
+/// the bot reconnect across restarts without a fresh login. The token lives in
+/// the OS keychain via [`SecretStore`], not in a plaintext file.
 type CachedMsa = ExpiringValue<AccessTokenResponse>;
 
-fn load_msa(cache_file: &Path) -> Option<CachedMsa> {
-    let data = std::fs::read(cache_file).ok()?;
-    serde_json::from_slice(&data).ok()
+fn load_msa(secrets: &SecretStore, id: &str) -> Option<CachedMsa> {
+    serde_json::from_str(&secrets.load(id)?).ok()
 }
 
-fn save_msa(cache_file: &Path, msa: &CachedMsa) -> anyhow::Result<()> {
-    std::fs::write(cache_file, serde_json::to_vec_pretty(msa)?)?;
-    Ok(())
+fn save_msa(secrets: &SecretStore, id: &str, msa: &CachedMsa) -> anyhow::Result<()> {
+    secrets.save(id, &serde_json::to_string(msa)?)
 }
 
 /// Resolve a connectable [`Account`] for `id`: load the cached Microsoft token,
 /// refresh it if expired, or (as a last resort) prompt a re-login in the UI.
 async fn ensure_account(
     http: &reqwest::Client,
-    cache_file: &Path,
+    secrets: &SecretStore,
     id: &str,
     app: &AppHandle,
 ) -> anyhow::Result<Account> {
-    let mut msa = match load_msa(cache_file) {
+    let mut msa = match load_msa(secrets, id) {
         Some(m) => m,
-        None => interactive_login(http, cache_file, id, app, true).await?,
+        None => interactive_login(http, secrets, id, app, true).await?,
     };
 
     // Refresh ourselves (rather than letting azalea do it) so we can persist the
@@ -387,10 +481,10 @@ async fn ensure_account(
     if msa.is_expired() {
         msa = match refresh_ms_auth_token(http, &msa.data.refresh_token, None, None).await {
             Ok(m) => {
-                save_msa(cache_file, &m)?;
+                save_msa(secrets, id, &m)?;
                 m
             }
-            Err(_) => interactive_login(http, cache_file, id, app, true).await?,
+            Err(_) => interactive_login(http, secrets, id, app, true).await?,
         };
     }
 
@@ -402,7 +496,7 @@ async fn ensure_account(
 /// Returns the freshly obtained token.
 async fn interactive_login(
     http: &reqwest::Client,
-    cache_file: &Path,
+    secrets: &SecretStore,
     id: &str,
     app: &AppHandle,
     reauth: bool,
@@ -423,7 +517,7 @@ async fn interactive_login(
         crate::show_main(app);
     }
     let msa = get_ms_auth_token(http, code, None).await?;
-    save_msa(cache_file, &msa)?;
+    save_msa(secrets, id, &msa)?;
     Ok(msa)
 }
 
@@ -434,10 +528,10 @@ async fn fetch_profile(http: &reqwest::Client, msa: &CachedMsa) -> anyhow::Resul
 }
 
 /// Handle "add account": log in interactively, then persist the new account.
-async fn run_login(app: &AppHandle, store: &Arc<Store>, id: &str, cache_file: &Path) {
+async fn run_login(app: &AppHandle, store: &Arc<Store>, secrets: &SecretStore, id: &str) {
     let http = reqwest::Client::new();
     let result = async {
-        let msa = interactive_login(&http, cache_file, id, app, false).await?;
+        let msa = interactive_login(&http, secrets, id, app, false).await?;
         fetch_profile(&http, &msa).await
     }
     .await;
@@ -446,7 +540,7 @@ async fn run_login(app: &AppHandle, store: &Arc<Store>, id: &str, cache_file: &P
             let uuid = profile.id.simple().to_string();
             let username = profile.name.clone();
             {
-                let mut cfg = store.config.lock().unwrap();
+                let mut cfg = store.config.lock();
                 if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.uuid == uuid) {
                     acc.id = id.to_string();
                     acc.username = username.clone();
@@ -482,7 +576,7 @@ fn emit_status(
     error_key: Option<&str>,
     attempt: Option<i64>,
 ) {
-    statuses.lock().unwrap().insert(
+    statuses.lock().insert(
         id.to_string(),
         StatusInfo {
             status: status.to_string(),
@@ -526,7 +620,7 @@ fn spawn_metrics(app: AppHandle) {
 }
 
 /// Strip a leading scheme (e.g. `tcp://`) so azalea can resolve `host[:port]`.
-fn clean_address(a: &str) -> String {
+pub fn clean_address(a: &str) -> String {
     let a = a.trim();
     match a.find("://") {
         Some(i) => a[i + 3..].to_string(),
@@ -542,10 +636,10 @@ fn backoff_delay(attempts: u32) -> Duration {
 }
 
 /// Sleep for `dur`, returning early with `true` if the bot was asked to stop.
-async fn wait_with_stop(stop: &Notify, dur: Duration) -> bool {
+async fn wait_with_stop(stop: &CancellationToken, dur: Duration) -> bool {
     tokio::select! {
         _ = sleep(dur) => false,
-        _ = stop.notified() => true,
+        _ = stop.cancelled() => true,
     }
 }
 
