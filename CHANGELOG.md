@@ -8,6 +8,42 @@ und das Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 Die Einträge der jeweils installierten Version werden nach einem Update
 automatisch in der App unter „Was ist neu" angezeigt.
 
+## [1.1.0] - 2026-06-19
+
+### Added
+
+- **Desktop notifications when an account drops for good.** If an account never
+  manages to connect, or connects but keeps getting dropped, lodestone now raises
+  a system notification (in English or German, following your interface language)
+  so you find out even when the window is hidden in the tray.
+
+### Changed
+
+- **Bots now simply stay connected.** The light anti-AFK look-around movement was
+  removed; an account just holds its connection open and does nothing else on the
+  server. Reconnect-after-a-drop is unchanged.
+- **The connection engine is now crash-aware.** In the unlikely event the
+  background engine crashes, lodestone tells you with a notification and an
+  in-window message instead of looking alive while quietly ignoring every action.
+- The Rust backend was split into focused modules (commands, tray, avatars) and
+  connection status became a typed value rather than loose strings, mirroring the
+  earlier frontend cleanup. No behaviour change, just easier to maintain.
+
+### Security
+
+- **A Content Security Policy is now enforced** in the app window, restricting
+  what the interface may load to the app's own assets plus locally cached avatar
+  and server icons.
+
+### Fixed
+
+- **Settings now save atomically.** A crash or power loss while writing can no
+  longer leave a half-written, corrupt `config.json`: your accounts, selection,
+  and server address stay intact.
+- **Avatar loading can no longer hang.** Fetching a head from mc-heads.net now
+  has a timeout, so a slow or unreachable avatar host won't leave a picture stuck
+  loading.
+
 ## [1.0.0] - 2026-06-15
 
 ### Security

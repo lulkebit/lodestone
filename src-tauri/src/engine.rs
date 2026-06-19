@@ -21,19 +21,46 @@ use azalea_auth::{
     AccessTokenResponse, ProfileResponse,
 };
 use parking_lot::Mutex;
+use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::time::{interval, sleep};
 use tokio_util::sync::CancellationToken;
 
 use crate::secrets::SecretStore;
-use crate::store::{Account as StoredAccount, Store};
+use crate::store::Store;
+use crate::AppState;
+
+/// A bot's live connection state. Serializes to the lowercase strings the
+/// frontend already keys off (`"connected"`, `"connecting"`, …), so making it an
+/// enum here just removes the stringly-typed status from the Rust side.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Status {
+    #[default]
+    Disconnected,
+    Connecting,
+    Connected,
+    Error,
+}
+
+impl Status {
+    /// The wire string used in `bot:status` event payloads.
+    fn as_str(self) -> &'static str {
+        match self {
+            Status::Disconnected => "disconnected",
+            Status::Connecting => "connecting",
+            Status::Connected => "connected",
+            Status::Error => "error",
+        }
+    }
+}
 
 /// Live (non-persisted) connection state for an account, keyed by account id.
 #[derive(Clone, Default)]
 pub struct StatusInfo {
-    pub status: String,
+    pub status: Status,
     pub connected_at: Option<i64>,
 }
 
@@ -90,6 +117,12 @@ impl Engine {
 
         // azalea's ECS runner relies on `spawn_local`, so the whole engine runs
         // on a dedicated current-thread runtime with a LocalSet.
+        //
+        // Panics inside individual bot tasks are isolated by tokio (they surface
+        // as a JoinError and don't unwind the runtime). The one thing that would
+        // otherwise fail silently is a panic in `manager` itself: the thread
+        // would die and every later command would no-op forever. Catch that and
+        // tell the user, instead of leaving the app looking alive but inert.
         let tx_for_thread = cmd_tx.clone();
         std::thread::Builder::new()
             .name("lodestone-mc".into())
@@ -99,10 +132,17 @@ impl Engine {
                     .build()
                     .expect("build minecraft runtime");
                 let local = tokio::task::LocalSet::new();
-                local.block_on(
-                    &rt,
-                    manager(app, store, statuses, secrets, tx_for_thread, cmd_rx),
-                );
+                let app_for_panic = app.clone();
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    local.block_on(
+                        &rt,
+                        manager(app, store, statuses, secrets, tx_for_thread, cmd_rx),
+                    );
+                }));
+                if result.is_err() {
+                    let _ = app_for_panic.emit("engine:crashed", ());
+                    notify_engine_crash(&app_for_panic);
+                }
             })
             .expect("spawn minecraft thread");
 
@@ -204,7 +244,7 @@ async fn manager(
                 if let Some(b) = bots.remove(&id) {
                     b.stop.cancel();
                 }
-                emit_status(&app, &statuses, &id, "disconnected", None, None, None, None);
+                emit_status(&app, &statuses, &id, Status::Disconnected, None, None, None, None);
             }
             Cmd::StopAll => {
                 // Cancel any queued staggered connects so they don't reconnect
@@ -217,7 +257,7 @@ async fn manager(
                     b.stop.cancel();
                 }
                 for id in ids {
-                    emit_status(&app, &statuses, &id, "disconnected", None, None, None, None);
+                    emit_status(&app, &statuses, &id, Status::Disconnected, None, None, None, None);
                 }
             }
             Cmd::StartLogin { id } => {
@@ -246,9 +286,9 @@ async fn manager(
     }
 }
 
-/// Run one bot until stopped: authenticate, connect, keep alive with gentle
-/// anti-AFK, and reconnect with backoff on drops. Returns when the user stops it
-/// or when the initial connection gives up.
+/// Run one bot until stopped: authenticate, connect, and reconnect with backoff
+/// on drops. The bot does nothing on the server beyond holding the connection
+/// open. Returns when the user stops it or when the initial connection gives up.
 async fn run_bot(
     app: &AppHandle,
     statuses: &Statuses,
@@ -270,7 +310,7 @@ async fn run_bot(
             app,
             statuses,
             id,
-            "connecting",
+            Status::Connecting,
             None,
             last_error.as_deref(),
             None,
@@ -325,10 +365,9 @@ async fn run_bot(
             .lock()
             .insert_resource(AutoReconnectDelay::new(Duration::MAX));
 
-        // 3. Stay connected: forward status, run gentle anti-AFK, watch for drops.
-        let mut afk = interval(Duration::from_secs(45));
-        afk.tick().await; // discard the immediate first tick
-        let mut yaw: f32 = 0.0;
+        // 3. Stay connected: forward status and watch for drops. The bot performs
+        //    no actions on the server (no movement, no look turns); it just keeps
+        //    the connection open.
         let mut spawned = false;
         let mut spawned_at: Option<Instant> = None;
         let mut reason: Option<String> = None;
@@ -338,14 +377,6 @@ async fn run_bot(
                 _ = stop.cancelled() => {
                     client.disconnect();
                     return;
-                }
-                _ = afk.tick() => {
-                    // A small look turn resets idle-kick timers without moving the
-                    // bot off its spot (unlike walking, which could be dangerous).
-                    if spawned {
-                        yaw = (yaw + 31.0) % 360.0;
-                        client.set_direction(yaw, 0.0);
-                    }
                 }
                 ev = rx.recv() => {
                     match ev {
@@ -358,7 +389,7 @@ async fn run_bot(
                                 attempts = 0;
                                 last_error = None;
                                 emit_status(
-                                    app, statuses, id, "connected",
+                                    app, statuses, id, Status::Connected,
                                     Some(now_secs()), None, None, None,
                                 );
                             }
@@ -396,12 +427,13 @@ async fn run_bot(
                         app,
                         statuses,
                         id,
-                        "error",
+                        Status::Error,
                         None,
                         err,
                         Some("bot.error.unstable"),
                         None,
                     );
+                    notify_unstable(app, id);
                     return;
                 }
             }
@@ -430,19 +462,20 @@ fn give_up(
     if !ever_connected && *attempts > MAX_INITIAL_ATTEMPTS {
         match last_error.as_deref() {
             Some(e) if !e.is_empty() => {
-                emit_status(app, statuses, id, "error", None, Some(e), None, None)
+                emit_status(app, statuses, id, Status::Error, None, Some(e), None, None)
             }
             _ => emit_status(
                 app,
                 statuses,
                 id,
-                "error",
+                Status::Error,
                 None,
                 None,
                 Some("bot.error.connectFailed"),
                 None,
             ),
         }
+        notify_connect_failed(app, id);
         true
     } else {
         false
@@ -514,7 +547,7 @@ async fn interactive_login(
         }),
     );
     if reauth {
-        crate::show_main(app);
+        crate::tray::show_main(app);
     }
     let msa = get_ms_auth_token(http, code, None).await?;
     save_msa(secrets, id, &msa)?;
@@ -539,21 +572,7 @@ async fn run_login(app: &AppHandle, store: &Arc<Store>, secrets: &SecretStore, i
         Ok(profile) => {
             let uuid = profile.id.simple().to_string();
             let username = profile.name.clone();
-            {
-                let mut cfg = store.config.lock();
-                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.uuid == uuid) {
-                    acc.id = id.to_string();
-                    acc.username = username.clone();
-                } else {
-                    cfg.accounts.push(StoredAccount {
-                        id: id.to_string(),
-                        username: username.clone(),
-                        uuid: uuid.clone(),
-                        selected: true,
-                    });
-                }
-            }
-            store.save();
+            store.upsert_account(id, &username, &uuid);
             let _ = app.emit(
                 "auth:success",
                 json!({ "id": id, "username": username, "uuid": uuid }),
@@ -570,7 +589,7 @@ fn emit_status(
     app: &AppHandle,
     statuses: &Statuses,
     id: &str,
-    status: &str,
+    status: Status,
     connected_at: Option<i64>,
     error: Option<&str>,
     error_key: Option<&str>,
@@ -579,7 +598,7 @@ fn emit_status(
     statuses.lock().insert(
         id.to_string(),
         StatusInfo {
-            status: status.to_string(),
+            status,
             connected_at,
         },
     );
@@ -587,14 +606,76 @@ fn emit_status(
         "bot:status",
         json!({
             "id": id,
-            "status": status,
+            "status": status.as_str(),
             "connected_at": connected_at,
             "error": error.unwrap_or(""),
             "error_key": error_key.unwrap_or(""),
             "attempt": attempt,
         }),
     );
-    crate::update_tray(app);
+    crate::tray::update(app);
+}
+
+// --- OS notifications -------------------------------------------------------
+//
+// Fired when a bot permanently fails (never connected, or kept dropping) and
+// when the engine thread itself crashes, so a background app that hides to the
+// tray can still tell the user something went wrong. Messages are localized for
+// the two shipped languages straight from the stored language code, since the
+// backend has no access to the frontend's locale files.
+
+fn show_notification(app: &AppHandle, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app
+        .notification()
+        .builder()
+        .title("lodestone")
+        .body(body)
+        .show();
+}
+
+fn is_german(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .map(|s| s.store.language().as_deref() == Some("de"))
+        .unwrap_or(false)
+}
+
+fn account_name(app: &AppHandle, id: &str) -> String {
+    app.try_state::<AppState>()
+        .and_then(|s| s.store.account_username(id))
+        .unwrap_or_else(|| id.to_string())
+}
+
+/// Never managed to connect (likely a ban, whitelist, or wrong address).
+fn notify_connect_failed(app: &AppHandle, id: &str) {
+    let name = account_name(app, id);
+    let body = if is_german(app) {
+        format!("{name} konnte sich nicht mit dem Server verbinden.")
+    } else {
+        format!("{name} could not connect to the server.")
+    };
+    show_notification(app, &body);
+}
+
+/// Connected but kept getting dropped, so reconnecting was given up.
+fn notify_unstable(app: &AppHandle, id: &str) {
+    let name = account_name(app, id);
+    let body = if is_german(app) {
+        format!("{name} verliert ständig die Verbindung zum Server.")
+    } else {
+        format!("{name} keeps losing the connection to the server.")
+    };
+    show_notification(app, &body);
+}
+
+/// The engine thread panicked: commands no longer work until a restart.
+fn notify_engine_crash(app: &AppHandle) {
+    let body = if is_german(app) {
+        "Die Verbindungs-Engine ist abgestürzt. Bitte starte lodestone neu."
+    } else {
+        "The connection engine crashed. Please restart lodestone."
+    };
+    show_notification(app, body);
 }
 
 /// Sample whole-process CPU/RAM every 2s and emit it as `app:metrics`.

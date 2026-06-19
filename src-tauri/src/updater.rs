@@ -141,13 +141,7 @@ pub async fn install_update(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn get_whats_new(app: AppHandle, state: State<AppState>) -> Option<WhatsNew> {
     let current = app.package_info().version.to_string();
-    let show = {
-        let mut cfg = state.store.config.lock();
-        let show = matches!(&cfg.last_seen_version, Some(v) if v != &current);
-        cfg.last_seen_version = Some(current.clone());
-        show
-    };
-    state.store.save();
+    let show = state.store.mark_version_seen(&current);
 
     if show {
         changelog_for(&current).map(|notes| WhatsNew {
