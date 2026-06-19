@@ -37,8 +37,8 @@ _Supported Minecraft version: `1.21.11`._
   connection per account.
 - **Live overview**: see each account's status and uptime, plus real CPU and
   memory usage per account and in total.
-- **Stays online**: automatic reconnect after a drop, and light anti-AFK
-  movement so servers don't kick you for being idle.
+- **Stays online**: automatic reconnect after a drop, so a brief network
+  hiccup doesn't end the session.
 - **Automatic updates**: lodestone updates itself and shows you what changed.
 
 ## Getting started

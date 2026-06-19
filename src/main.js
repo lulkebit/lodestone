@@ -12,6 +12,7 @@ import { mountAuth, resolveReauthIfConnected } from "./js/auth.js";
 import { mountUpdates } from "./js/updates.js";
 import { mountSettings } from "./js/settings.js";
 import { mountServer, pingCurrent } from "./js/server.js";
+import { toast } from "./js/overlays.js";
 
 function wireMetrics() {
   const cpuEl = $("#overall-cpu");
@@ -33,6 +34,12 @@ function wireBotStatus() {
     });
     resolveReauthIfConnected(id, status);
   });
+}
+
+// The backend engine thread crashed (commands stop working until a restart).
+// The backend also raises an OS notification; this is the in-window signal.
+function wireEngineCrash() {
+  api.on("engine:crashed", () => toast("error.engineCrashed", true));
 }
 
 function applyState(s) {
@@ -59,6 +66,7 @@ async function boot() {
   mountServer();
   wireMetrics();
   wireBotStatus();
+  wireEngineCrash();
 
   applyState(s);
   pingCurrent();

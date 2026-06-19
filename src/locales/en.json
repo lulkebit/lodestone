@@ -57,6 +57,7 @@
   "error.accountNotFound": "Account not found.",
   "error.noServer": "No server address set.",
   "error.noUpdate": "No update available.",
+  "error.engineCrashed": "The connection engine crashed. Please restart lodestone.",
 
   "whatsnew.title": "What's new",
   "whatsnew.version": "Version {version}",
